@@ -125,10 +125,14 @@ Other choices in `assistant-config.ts`:
 
 This is the best story to tell, because it's what building a voice agent is actually like. Everything passed its tests, then a real call found problems no test could. I read Vapi's logs and fixed causes rather than symptoms.
 
-- **It went silent after booking.** The booking saved. The logs showed our webhook answered in 0.2 seconds, but Vapi never marked the tool complete, because it was waiting on the "one moment" filler. Removing fillers fixed that and also removed about 2.5 seconds from every write. Not yet confirmed on a second call, so say that.
+- **It went silent after booking.** The booking saved. The logs showed our webhook answered in 0.2 seconds, but Vapi never marked the tool complete, because it was waiting on the "one moment" filler. Removing my custom filler fixed it: on the second call every tool completed.
 - **It repeated itself.** One answer arrived in fragments and each started a reply: 49 model requests in one call. That's a turn-taking setting, not a prompt problem.
 - **"Karachi" got "I only speak English and Spanish".** The transcriber heard my accent as Hindi. The prompt treated a mishearing as a language choice, so I changed both.
 - **"Tomorrow" offered next Friday.** I gave the model the date without the weekday, so it guessed. Code now does the date filtering.
+- **It ended on a bare "Goodbye".** That was Vapi's default for the hang-up tool. I set the closing line in code, so it no longer depends on the model.
+- **It argued "two thousand" wasn't a full year.** A reminder of why validation belongs on the server: the model should ask, not judge.
+
+Turn times went from 2.2 to 3.6 seconds down to a 1.6 second median between those two calls.
 
 Also: the voice ID in Vapi's own docs was rejected by its API, and I switched hosting when Railway paused sign-ups. Railway's pause is a good example of a vendor blocker: document it and move on.
 

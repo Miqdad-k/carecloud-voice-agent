@@ -90,7 +90,7 @@ async function updatePatientTool(args: Args, ctx: ToolContext): Promise<ToolOutc
 }
 
 async function getAppointmentSlots(args: Args): Promise<ToolOutcome> {
-  const { slots, preferenceMet } = await findOpenSlots({ date: args.date, day: args.day, time_of_day: args.time_of_day });
+  const { slots, preferenceMet } = await findOpenSlots({ date: args.date, time_of_day: args.time_of_day });
   return { status: 'ok', slots, ...(!preferenceMet && { requested_time_unavailable: true }) };
 }
 

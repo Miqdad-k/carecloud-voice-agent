@@ -32,11 +32,11 @@ const CALLER_CONFIRMED = { type: 'boolean', description: 'True only after a clea
 const { date_of_birth, phone_number, state, zip_code, email, insurance_member_id, emergency_contact_phone } = PATIENT_PROPERTIES;
 const CHECKABLE_FIELDS = { date_of_birth, phone_number, state, zip_code, email, insurance_member_id, emergency_contact_phone };
 
-// Spoken only if a write is unusually slow. There is deliberately no request-start filler:
-// on the first real call, Vapi held each tool result until its filler finished speaking,
-// adding about 2.5 seconds, and when the model also spoke in that turn the tool never
-// completed and the call went silent. The server answers in about 200 ms, so no filler is
-// needed in the normal case.
+// Spoken only if a write is unusually slow. There is deliberately no custom request-start
+// filler: on the first real call, "One moment while I book that" stalled when the model
+// also spoke in that turn, and the tool never completed. Without one, Vapi uses its own
+// short defaults such as "Just a sec". Its docs give no way to turn those off, and the
+// second real call completed every tool with them.
 const SLOW_WRITE_FILLER = {
   type: 'request-response-delayed',
   timingMilliseconds: 3000,
@@ -125,12 +125,11 @@ const TOOLS = [
   ),
   tool(
     'get_appointment_slots',
-    'Get open appointment times, optionally near a preference.',
+    'Get open appointment times. Send nothing for the earliest.',
     {
       type: 'object',
       properties: {
-        date: { type: 'string', description: 'A specific day, MM/DD/YYYY' },
-        day: { type: 'string', enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] },
+        date: { type: 'string', description: 'Only if the caller named a day. MM/DD/YYYY' },
         time_of_day: { type: 'string', enum: ['morning', 'afternoon'] },
       },
       additionalProperties: false,
@@ -151,8 +150,19 @@ const TOOLS = [
     },
     [SLOW_WRITE_FILLER, WRITE_UNREACHABLE],
   ),
-  // Vapi's built-in hang-up tool. The agent says goodbye itself, then calls it.
-  { type: 'endCall' },
+  // Vapi's built-in hang-up tool. With no message it just says "Goodbye", which is all a
+  // caller heard after booking on a real call. Set here, the closing line plays every time
+  // and does not depend on the model remembering to say it.
+  {
+    type: 'endCall',
+    messages: [{
+      type: 'request-start',
+      contents: [
+        { type: 'text', text: 'Thanks for calling CareCloud, and have a great rest of your day. Goodbye!', language: 'en' },
+        { type: 'text', text: 'Gracias por llamar a CareCloud, y que tenga un buen día. ¡Adiós!', language: 'es' },
+      ],
+    }],
+  },
 ];
 
 export const ASSISTANT_NAME = 'CareCloud Patient Intake';

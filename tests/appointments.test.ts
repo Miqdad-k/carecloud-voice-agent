@@ -46,9 +46,9 @@ describe('the mock calendar', () => {
     expect(slots[2].spoken).toBe('Monday, November 2 at 1:00 PM');
   });
 
-  it('filters by day and time of day', () => {
-    const tuesdayAfternoon = slots.filter((s) => matchesPreference(s, { day: 'Tuesday', time_of_day: 'afternoon' }));
-    expect(tuesdayAfternoon.slice(0, 3).map((s) => s.slot)).toEqual(['2026-11-03T13:00', '2026-11-03T15:30', '2026-11-10T13:00']);
+  it('filters by date and time of day', () => {
+    const tuesdayAfternoon = slots.filter((s) => matchesPreference(s, { date: '11/03/2026', time_of_day: 'afternoon' }));
+    expect(tuesdayAfternoon.map((s) => s.slot)).toEqual(['2026-11-03T13:00', '2026-11-03T15:30']);
   });
 
   it('filters by an exact date, and reaches about four weeks out', () => {
@@ -63,7 +63,7 @@ describe('get_appointment_slots', () => {
     const outcome = await callTool('get_appointment_slots', {});
     expect(outcome.slots).toHaveLength(3);
 
-    const nonsense = await callTool('get_appointment_slots', { day: 'Someday' });
+    const nonsense = await callTool('get_appointment_slots', { date: 'someday' });
     expect(nonsense.slots).toEqual(outcome.slots);
     expect(outcome.requested_time_unavailable).toBeUndefined();
     expect(nonsense.requested_time_unavailable).toBe(true);

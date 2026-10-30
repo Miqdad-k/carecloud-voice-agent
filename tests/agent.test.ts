@@ -19,9 +19,18 @@ describe('assistant config', () => {
     expect(declared.sort()).toEqual([...TOOL_NAMES].sort());
   });
 
-  it('has no filler at the start of a tool, which stalled the first real call', () => {
-    const messages = assistant.model.tools.flatMap((t) => ('messages' in t && t.messages ? t.messages : [])) as { type: string }[];
+  it('has no custom filler on function tools, which stalled the first real call', () => {
+    const functionTools = assistant.model.tools.filter((t) => t.type === 'function');
+    const messages = functionTools.flatMap((t) => t.messages ?? []) as { type: string }[];
     expect(messages.map((m) => m.type)).not.toContain('request-start');
+  });
+
+  it('closes the call warmly in code, in both languages, not with a bare goodbye', () => {
+    const endCall = assistant.model.tools.find((t) => t.type === 'endCall') as { messages: { contents: { text: string; language: string }[] }[] };
+    const texts = endCall.messages[0].contents;
+    expect(texts.map((t) => t.language)).toEqual(['en', 'es']);
+    expect(texts[0].text).toContain('have a great rest of your day');
+    expect(SYSTEM_PROMPT).toContain('never say goodbye yourself');
   });
 
   it('hangs up politely before the 30 second silence cut-off Vapi applied on a real call', () => {
@@ -56,7 +65,7 @@ describe('prompt shape, which the token and caching decisions depend on', () => 
   });
 
   it('stays under a budget, so growth has to be a decision', () => {
-    expect(SYSTEM_PROMPT.split(/\s+/).length).toBeLessThan(1250);
+    expect(SYSTEM_PROMPT.split(/\s+/).length).toBeLessThan(1350);
   });
 
   it('keeps the guardrails in the prompt', () => {

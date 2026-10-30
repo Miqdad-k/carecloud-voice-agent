@@ -126,14 +126,14 @@ The rule: if code can do it, the model doesn't. That removes model turns and mak
 | `book_appointment` | 11.1 ms | 19.8 ms |
 | `update_patient` | 11.9 ms | 16.9 ms |
 
-**A whole turn, from Vapi's metrics on the first real call:** about 2.2 to 3.6 seconds on normal turns, with model time around 0.6 seconds, voice around 0.5 to 0.8, and most of the rest the wait after a caller stops speaking. A few turns ran up to 8.5 seconds, including when OpenAI returned no response and Vapi retried. That call was the first, before the changes below, so these are the numbers to beat. Our webhook took about 0.2 seconds there, including the network to Render, so it is not the bottleneck.
+**A whole turn, from Vapi's metrics on the first real call:** about 2.2 to 3.6 seconds on normal turns, with model time around 0.6 seconds, voice around 0.5 to 0.8, and most of the rest the wait after a caller stops speaking. A few turns ran up to 8.5 seconds, including when OpenAI returned no response and Vapi retried. That call was before the changes below. **The second call, after them, had a median turn of 1.6 seconds and a worst turn of 3.0**, with model 0.7, voice 0.3 and the wait after the caller stopped 0.3. Our webhook took about 0.2 seconds there, including the network to Render, so it is not the bottleneck.
 
 **Other choices:**
 
 - A keep-alive database pool, so a tool call never waits on a new connection.
 - **Region:** Render's Oregon region, with the app and Postgres together. Vapi's docs state no region. An example hostname in them contains `us-west-2`, which is a hint and not a statement.
 - **Turn-taking:** Flux decides when a caller has finished, and the agent waits 0.6 seconds, so answers arriving in fragments don't each start a reply.
-- **No spoken fillers on normal tool calls.** On the real call, Vapi held each result until its "one moment" filler finished, adding about 2.5 seconds. A filler now plays only if a write takes over 3 seconds.
+- **No custom fillers on tool calls.** On the first real call, a custom "one moment" filler stalled when the model spoke in the same turn. Vapi's own short defaults, such as "Just a sec", now play instead, and its docs give no way to turn them off. A longer message plays if a write takes over 3 seconds.
 
 ## Tokens and model
 
@@ -152,7 +152,7 @@ The rule: if code can do it, the model doesn't. That removes model turns and mak
 
 **What keeps tokens down:**
 
-- The prompt is about 1,202 words, re-sent every turn, and a test keeps it under a budget. Its first version was 1,289 words with fewer features.
+- The prompt is about 1,300 words, re-sent every turn, and a test keeps it under a budget. That is more than I wanted: it reached 944 words before the first real call, and each addition since fixes a failure seen on one. Caching and the model's small share of the bill make that a fair trade.
 - Fields are described in as few words as possible, and `check_fields` only lists the answers worth checking early.
 - Tool results are short statuses, such as `{"status":"valid"}`.
 - `check_fields` is only called for the risky answers, because each call costs a model turn.
@@ -255,22 +255,25 @@ This creates or updates the assistant, attaches a free U.S. number, and prints i
 
 ## Testing notes
 
-**Automated:** `npm test` runs 149 tests against a real Postgres, with no mocks of the database. They cover the validator, the REST API, the webhook, appointments, and the guardrails. Webhook tests use payloads shaped from Vapi's docs and OpenAPI document.
+**Automated:** `npm test` runs 150 tests against a real Postgres, with no mocks of the database. They cover the validator, the REST API, the webhook, appointments, and the guardrails. Webhook tests use payloads shaped from Vapi's docs and OpenAPI document.
 
 **Run by hand:** the built server over HTTP, with 30 simulated calls replayed through the webhook, a real Postgres kill and recovery, and a restart with data surviving.
 
-**One real voice call, in Vapi's browser test, from Karachi.** It registered a patient, and the record, transcript and appointment reached the database and API. Validation re-asks, the read-back and the prompt cache all worked. It also found real problems, which is why it mattered:
+**Two real voice calls, in Vapi's browser test, from Karachi.** Both registered a patient, and the record, transcript and appointment reached the database and API. Validation re-asks, the read-back and the prompt cache all worked. They also found real problems, which is why they mattered:
 
 | Found on the call | Cause, from Vapi's logs | Change |
 |---|---|---|
-| Went silent and hung up after booking, though the booking saved | The tool never completed after its "one moment" filler, so the model was never asked to reply | Fillers removed from normal tool calls |
-| The same question spoken twice | One answer arriving in fragments started several replies: 49 model requests in one call | Longer wait before replying, and noise can't interrupt |
-| "Karachi" got "I only speak English and Spanish" | Transcribed as Hindi script, which the prompt treated as a language choice | Flux with language hints, and the prompt treats it as a mishearing |
+| Went silent and hung up after booking, though the booking saved | The tool never completed after a custom "one moment" filler, so the model was never asked to reply | Custom fillers removed. Confirmed on the second call: every tool completed |
+| The same question spoken twice | One answer arriving in fragments started several replies: 49 model requests in 9 minutes | Longer wait before replying, and noise can't interrupt. Second call: 33 requests in 5.5 minutes, and no doubled questions |
+| "Karachi" got "I only speak English and Spanish" | Transcribed as Hindi script, which the prompt treated as a language choice | Flux with language hints, and the prompt treats it as a mishearing. Second call: no language confusion |
 | "Tomorrow" offered the next Friday | The model knew the date but not the weekday, so it guessed | Weekday added, and code filters by exact date |
 | Sounded robotic | Azure voice, and "Thanks" and "Could you please" on every turn | ElevenLabs voice, and prompt rewritten for variety |
 | Kept asking for an email after the caller declined | The prompt was not firm enough | A no now goes straight to the read-back |
+| Second call: ended on a bare "Goodbye" after booking | Vapi's hang-up tool says that when it has no message | The closing line is now set in code, and the model confirms the booking first |
+| Second call: a minute arguing that "two thousand" was an incomplete year | The model judged the date itself instead of asking the server | The prompt forbids that, and the validator now reads day-first dates |
+| Second call: guessed Friday when no day was named | The tool offered a weekday option the model filled in anyway | That option is removed, and code gives the earliest times |
 
-**Not yet verified:** those fixes on a second call, and **the real phone line.** The number is active and bound to the assistant according to Vapi, but no call has come through the phone network, because it has not yet been dialled from a phone. Spanish, and most injection cases, are also still to run. `docs/ADVERSARIAL_TESTS.md` is the checklist.
+**Not yet verified:** the last three fixes in the table, which came after the second call, and **the real phone line.** The number is active and bound to the assistant according to Vapi, but no call has come through the phone network, because it has not yet been dialled from a phone. Spanish, and most injection cases, are also still to run. `docs/ADVERSARIAL_TESTS.md` is the checklist.
 
 ## Known limitations and trade-offs
 
@@ -324,7 +327,7 @@ const IDENTITY = `You are Ava, CareCloud's virtual intake coordinator, on a live
 // questions, and the same phrases on every turn. The first real test call sounded robotic
 // because it opened most turns with "Thanks" and repeated "Could you please" word for word.
 const SPEECH = `SPEECH
-Everything you write is spoken, so sound like a warm, relaxed person at a front desk. No lists, symbols or field names. One or two short sentences, one question at a time, with contractions and everyday words. Most turns need no acknowledgement: just ask the next thing. Don't echo what they said, don't open every turn with "Thanks", and go easy on "please". When you ask again, use different words, never the same sentence twice. Say phone numbers digit by digit in groups, dates in words, and "at" and "dot" in emails. If interrupted, stop, listen, and carry on from where you were. Call tools without announcing them, and never say "one moment".`;
+Everything you write is spoken, so sound like a warm, relaxed person at a front desk. No lists, symbols or field names. One or two short sentences, one question at a time, with contractions and everyday words. Most turns need no acknowledgement: just ask the next thing. Don't echo what they said, don't open every turn with "Thanks", and go easy on "please". When you ask again, use different words, never the same sentence twice. Say phone numbers digit by digit in groups, dates in words, and "at" and "dot" in emails. If interrupted, stop, listen, and carry on from where you were. When you call a tool, say nothing else in that reply, and wait for its result before speaking or asking the next thing.`;
 
 // Mishearing has to be handled in the prompt because the transcript is all the model has.
 // On the first real call, "Karachi" came through as Hindi script and the agent told the
@@ -342,7 +345,7 @@ You speak English and Spanish. If the caller clearly speaks Spanish or asks for 
 const WHAT_YOU_NEED = `WHAT YOU NEED
 Required: first name, last name, phone number, date of birth, sex, street address, city, state, ZIP code.
 Optional: apartment or unit, email, insurance provider, insurance member ID, preferred language, emergency contact name and phone.
-Callers give things out of order or several at once. Take everything whenever they give it and never ask again for what you have. If they are registering someone else, collect the patient's details. If a name is unusual or unclear, ask them to spell it. Always ask them to spell emails and member IDs. When someone spells something, use exactly those letters. Never guess or fill in a detail, such as a city from a ZIP code.`;
+Callers give things out of order or several at once. Take everything whenever they give it and never ask again for what you have. If they are registering someone else, collect the patient's details. If a name is unusual or unclear, ask them to spell it, one name at a time. Always ask them to spell emails and member IDs. When someone spells something, use exactly those letters. Never guess or fill in a detail, such as a city from a ZIP code.`;
 
 // The order of the call. The phone number comes early so a returning caller finds out
 // straight away. check_fields catches a bad answer right away, using the server's rules,
@@ -351,14 +354,15 @@ const THE_CALL = `THE CALL
 1. Get their name. The greeting already asked.
 2. Get their phone number and call lookup_patient_by_phone.
    On match_found, say "It looks like we already have a record for" and the name, then ask "Would you like to update your information instead?" Several names can share a phone, so say them and ask which one or whether this is someone new. If it's someone new, carry on.
-3. Get date of birth. Call check_fields with it.
+3. Get date of birth. As soon as they say a date, call check_fields with it as MM/DD/YYYY. Never judge a date yourself: "twenty second October two thousand" is complete, and two thousand is a full year. Only ask again if check_fields says invalid.
 4. Ask: "For your record, should I put male, female, other, or would you rather decline to answer?"
 5. Get street address, then "Any apartment or unit number?", then city, state and ZIP. Take the state however they say it, and never ask for an abbreviation. Call check_fields with state and ZIP together.
 6. Offer once: "I can also collect your email, insurance information, emergency contact, and preferred language. Would you like to provide any of those?" If they say no, go straight to the read-back and don't ask for any optional detail again. Collect only what they want, checking emails, member IDs and contact phones with check_fields.
 7. Read it all back in one natural passage, spelling the last name letter by letter, and ask "Did I get all of that right?"
 8. Only after a clear yes, call save_patient with caller_confirmed true.
 9. On saved, say "You're all set," and their first name. Then ask if they'd like to book a first appointment.
-If yes, ask what day or time suits them and call get_appointment_slots. For a specific day, work out its date from today's date and pass it as date, so "tomorrow" means the day after today. The clinic is closed on weekends. If requested_time_unavailable is true, say so before offering what it returned. After they choose and agree, call book_appointment with that slot's value and caller_confirmed true, then say the spoken time back, say goodbye and call endCall. If they ask to book before registering, say you'd be glad to, right after their registration.`;
+If yes, ask what day or time suits them and call get_appointment_slots. Pass date or time_of_day only if they asked for one, and otherwise send nothing, which gives the earliest times. For a specific day, work out its date from today's date, so "tomorrow" means the day after today. The clinic is closed on weekends. If requested_time_unavailable is true, say so before offering what it returned. After they choose and agree, call book_appointment with that slot's value and caller_confirmed true.
+On booked, say "You're booked for" and the spoken time, then "See you then," and call endCall in that same reply. If they don't want an appointment, wish them well and call endCall. endCall says the goodbye for you, so never say goodbye yourself. If they ask to book before registering, say you'd be glad to, right after their registration.`;
 
 // Updates need the date of birth because a phone number is easy to know. The server holds
 // the identity, so the model cannot be talked into changing the wrong record.

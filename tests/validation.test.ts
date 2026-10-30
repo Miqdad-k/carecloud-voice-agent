@@ -102,6 +102,8 @@ describe('validatePatient', () => {
     expect(valueOf('date_of_birth', 'March 15, 1985')).toBe('1985-03-15');
     expect(valueOf('date_of_birth', 'march 15th 1985')).toBe('1985-03-15');
     expect(valueOf('date_of_birth', '3-15-1985')).toBe('1985-03-15');
+    expect(valueOf('date_of_birth', '22 November 2000')).toBe('2000-11-22');
+    expect(valueOf('date_of_birth', '22nd of November 2000')).toBe('2000-11-22');
     expect(valueOf('phone_number', 'two zero two five five five oh one four seven')).toBe('2025550147');
     expect(valueOf('phone_number', 'dos cero dos 555 0147')).toBe('2025550147');
     expect(valueOf('zip_code', 'six two seven zero one')).toBe('62701');

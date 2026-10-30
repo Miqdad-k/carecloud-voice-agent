@@ -59,16 +59,18 @@ const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', '
 export function parseDateOfBirth(value: string): string {
   const us = value.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
   const iso = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  // "March 15, 1985", or "March 15th 1985", which is how a date tends to come out of speech.
-  const words = value.match(/^([a-z]+)\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})$/i);
-  const monthFromWord = words ? MONTHS.indexOf(words[1].slice(0, 3).toLowerCase()) + 1 : 0;
+  // "March 15, 1985" or "15th of March 1985", which is how a date tends to come out of speech.
+  const monthFirst = value.match(/^([a-z]+)\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})$/i);
+  const dayFirst = value.match(/^(\d{1,2})(?:st|nd|rd|th)?(?:\s+of)?\s+([a-z]+)\.?,?\s+(\d{4})$/i);
+  const words = monthFirst ? { month: monthFirst[1], day: monthFirst[2], year: monthFirst[3] } : dayFirst ? { month: dayFirst[2], day: dayFirst[1], year: dayFirst[3] } : null;
+  const monthFromWord = words ? MONTHS.indexOf(words.month.slice(0, 3).toLowerCase()) + 1 : 0;
   if (!us && !iso && !monthFromWord) throw new Invalid('Date of birth must be in MM/DD/YYYY format.');
 
   const [year, month, day] = us
     ? [+us[3], +us[1], +us[2]]
     : iso
       ? [+iso[1], +iso[2], +iso[3]]
-      : [+words![3], monthFromWord, +words![2]];
+      : [+words!.year, monthFromWord, +words!.day];
 
   // JavaScript rolls 02/31 over to March, so a round trip exposes impossible dates.
   const date = new Date(Date.UTC(year, month - 1, day));
