@@ -27,8 +27,10 @@ const PATIENT_PROPERTIES = {
 
 const CALLER_CONFIRMED = { type: 'boolean', description: 'True only after a clear yes from the caller' };
 
-// For tools that take any subset of the fields above. Saves repeating the whole list.
-const ANY_PATIENT_FIELDS = { type: 'string', description: 'Field names as in save_patient' };
+// Only the answers worth checking the moment they're given. The rest wait for the save,
+// so this schema stays short.
+const { date_of_birth, phone_number, state, zip_code, email, insurance_member_id, emergency_contact_phone } = PATIENT_PROPERTIES;
+const CHECKABLE_FIELDS = { date_of_birth, phone_number, state, zip_code, email, insurance_member_id, emergency_contact_phone };
 
 // Spoken while a write is running, in the language of the call. Reads and checks stay
 // silent, since they normally return faster than a caller would notice.
@@ -82,7 +84,7 @@ const TOOLS = [
   tool(
     'check_fields',
     'Validate answers without saving. Send only the fields to check.',
-    { type: 'object', additionalProperties: ANY_PATIENT_FIELDS },
+    { type: 'object', properties: CHECKABLE_FIELDS, additionalProperties: false },
     [READ_UNREACHABLE],
   ),
   tool(
@@ -118,9 +120,9 @@ const TOOLS = [
     'Change fields on the record saved or verified on this call. Send only changed fields and caller_confirmed.',
     {
       type: 'object',
-      properties: { caller_confirmed: CALLER_CONFIRMED },
+      properties: { ...PATIENT_PROPERTIES, caller_confirmed: CALLER_CONFIRMED },
       required: ['caller_confirmed'],
-      additionalProperties: ANY_PATIENT_FIELDS,
+      additionalProperties: false,
     },
     [...fillers('One moment while I update that.', 'Un momento mientras lo actualizo.'), WRITE_UNREACHABLE],
   ),
@@ -186,11 +188,12 @@ export function buildAssistant(publicBaseUrl: string, webhookSecret: string) {
       tools: TOOLS,
     },
 
-    // Azure's multilingual voice, as Vapi's docs recommend for mixed languages. Azure rather
-    // than a Vapi voice, because Vapi's own voices have no fallback option in the schema.
+    // An Azure multilingual voice, which speaks whichever language the text is in. Azure
+    // rather than a Vapi voice, because Vapi's own voices have no fallback option in the
+    // schema. Vapi's docs show the ID "multilingual-auto", but its API rejects that.
     voice: {
       provider: 'azure',
-      voiceId: 'multilingual-auto',
+      voiceId: 'en-US-EmmaMultilingualNeural',
       fallbackPlan: { voices: [{ provider: 'vapi', voiceId: 'Elliot' }] },
     },
 

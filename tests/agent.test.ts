@@ -31,7 +31,7 @@ describe('assistant config', () => {
 
   it('sets the multilingual setup from Vapi docs and lists the languages in the prompt', () => {
     expect(assistant.transcriber.language).toBe('multi');
-    expect(assistant.voice.voiceId).toBe('multilingual-auto');
+    expect(assistant.voice.voiceId).toContain('Multilingual');
     expect(SYSTEM_PROMPT).toContain('You speak English and Spanish');
     expect(FIRST_MESSAGE).toContain('español');
   });

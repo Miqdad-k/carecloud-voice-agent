@@ -31,13 +31,28 @@ const assistant = existing
   : await vapi<Assistant>('POST', '/assistant', assistantConfig);
 console.log(`${existing ? 'Updated' : 'Created'} assistant ${assistant.id}`);
 
+// Vapi requires an area code, and any one of them can be out of stock.
+const AREA_CODES = ['415', '628', '206', '503', '512', '312'];
+
+async function createNumber(): Promise<PhoneNumber> {
+  let lastError: unknown;
+  for (const numberDesiredAreaCode of AREA_CODES) {
+    try {
+      return await vapi<PhoneNumber>('POST', '/phone-number', {
+        provider: 'vapi',
+        name: ASSISTANT_NAME,
+        assistantId: assistant.id,
+        numberDesiredAreaCode,
+      });
+    } catch (err) {
+      lastError = err;
+      console.log(`No number from area code ${numberDesiredAreaCode}: ${(err as Error).message}`);
+    }
+  }
+  throw lastError;
+}
+
 const numbers = await vapi<PhoneNumber[]>('GET', '/phone-number');
-const phone =
-  numbers.find((n) => n.assistantId === assistant.id) ??
-  (await vapi<PhoneNumber>('POST', '/phone-number', {
-    provider: 'vapi',
-    name: ASSISTANT_NAME,
-    assistantId: assistant.id,
-  }));
+const phone = numbers.find((n) => n.assistantId === assistant.id) ?? (await createNumber());
 
 console.log(`Phone number: ${phone.number ?? '(still activating, check the Vapi dashboard)'}`);
