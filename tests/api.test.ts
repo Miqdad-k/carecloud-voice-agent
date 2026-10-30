@@ -17,6 +17,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await app.close();
+  await pool.end();
 });
 
 async function createPatient(fields: Record<string, unknown> = {}) {

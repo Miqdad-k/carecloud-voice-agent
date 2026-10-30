@@ -18,6 +18,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await app.close();
+  await pool.end();
 });
 
 async function callTool(name: string, args: Record<string, unknown> | string, callId = randomUUID()) {

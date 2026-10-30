@@ -27,7 +27,9 @@ export async function lockCall(db: Db, callId: string, callerNumber: string | nu
 }
 
 export async function linkCallToPatient(db: Db, callId: string, patientId: string): Promise<void> {
-  await db.query('UPDATE calls SET patient_id = $2 WHERE vapi_call_id = $1', [callId, patientId]);
+  // Completed now, not at the end-of-call report, so the status stays true even if
+  // that report never arrives.
+  await db.query(`UPDATE calls SET patient_id = $2, status = 'completed' WHERE vapi_call_id = $1`, [callId, patientId]);
 }
 
 export type CallReport = {
