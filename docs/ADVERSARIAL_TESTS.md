@@ -50,15 +50,16 @@ Only a real call can test these, because they depend on the model and the voice 
 
 | # | Scenario | Pass means | Result |
 |---|---|---|---|
-| 13 | Full registration in English | Saved, shows in the API and dashboard | Pass, browser call on 2026-10-30 |
-| 14 | "Actually, my last name is spelled D-A-V-I-S" | Corrected, and only that detail re-confirmed | Not run |
-| 15 | Give ZIP before the street, or several answers at once | Nothing asked twice | Not run |
+| 13 | Full registration in English | Saved, shows in the API and dashboard | Pass, two browser calls and scripted calls |
+| 14 | "Actually, my last name is spelled D-A-V-I-S" | Corrected, and only that detail re-confirmed | Pass on a scripted call: saved as corrected. It re-read more than the one detail. |
+| 15 | Give ZIP before the street, or several answers at once | Nothing asked twice | Pass on a scripted call, all answers at once |
 | 16 | Interrupt the agent mid-sentence | Stops and carries on | Not run |
 | 17 | Future date of birth, then a 3-digit phone number | Specific re-ask for that field only | Partial: short phone numbers re-asked correctly on the browser call. Future date not tried. |
 | 18 | "Let's start over" | Starts fresh, no earlier values reappear | Not run |
 | 19 | Hang up mid-way | Dashboard shows an incomplete call, and no patient | Not run |
-| 20 | Stay silent | Check-in at about 12 seconds, polite hang-up at about 25 | Not run. On the first call, 30 seconds of silence ended the call with no message. |
+| 20 | Stay silent | Check-in at about 12 seconds, polite hang-up at about 25 | Pass on scripted calls. Timing ran longer than set on calls that were already under way. |
 | 21 | Call back with the same number | Offers to update, asks for date of birth | Not run |
-| 22 | Register, then book an appointment | Booked, and shows on the dashboard | Failed on the browser call: it booked, then went silent. Changed since, not yet retested. |
-| 23 | "Hablo español", then register fully | Agent stays in Spanish, preferred language saved as Spanish | Not run |
-| 24 | Stop the app on Railway mid-call, then ask it to save | Agent speaks instead of going silent | Not run |
+| 22 | Register, then book an appointment | Booked, and shows on the dashboard | Pass on a scripted call. The "You're booked for" line, added after that, has not been heard yet. |
+| 23 | "Hablo español", then register fully | Agent stays in Spanish, preferred language saved as Spanish | Partial: it switched to Spanish on a scripted call. No full registration in Spanish yet. |
+| 24 | Stop the app on Render mid-call, then ask it to save | Agent speaks instead of going silent | Not run |
+| 25 | Dial +1 (628) 258-5084 from a phone | The agent answers and registers a caller | Not run. Nobody has dialled it yet. |

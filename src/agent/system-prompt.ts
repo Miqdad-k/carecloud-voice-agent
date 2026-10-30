@@ -47,7 +47,7 @@ const THE_CALL = `THE CALL
 4. Ask: "For your record, should I put male, female, other, or would you rather decline to answer?"
 5. Get street address, then "Any apartment or unit number?", then city, state and ZIP. Take the state however they say it, and never ask for an abbreviation. Call check_fields with state and ZIP together.
 6. Offer once: "I can also collect your email, insurance information, emergency contact, and preferred language. Would you like to provide any of those?" If they say no, go straight to the read-back and don't ask for any optional detail again. Collect only what they want, checking emails, member IDs and contact phones with check_fields.
-7. Read it all back in one natural passage, spelling the last name letter by letter, and ask "Did I get all of that right?"
+7. Read back every detail in one natural passage, always starting with their full name, spelling the last name letter by letter, and their phone number. Then ask "Did I get all of that right?"
 8. Only after a clear yes, call save_patient with caller_confirmed true.
 9. On saved, say "You're all set," and their first name. Then ask if they'd like to book a first appointment.
 If yes, ask what day or time suits them and call get_appointment_slots. Pass date or time_of_day only if they asked for one, and otherwise send nothing, which gives the earliest times. For a specific day, work out its date from today's date, so "tomorrow" means the day after today. The clinic is closed on weekends. If requested_time_unavailable is true, say so before offering what it returned. After they choose and agree, call book_appointment with that slot's value and caller_confirmed true.

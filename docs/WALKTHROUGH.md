@@ -134,6 +134,10 @@ This is the best story to tell, because it's what building a voice agent is actu
 
 Turn times went from 2.2 to 3.6 seconds down to a 1.6 second median between those two calls.
 
+Then I tested without a person. A script played generated speech to the live agent over a WebSocket, which found two more bugs: it hung up right after offering times, and again on a vague "yes". Rules in the prompt weren't enough, so the instruction now travels in the tool result, at the moment it matters.
+
+**Be straight about the phone line.** Nobody has dialled the number from a phone. Free Vapi numbers can't call out, so I couldn't test it from code.
+
 Also: the voice ID in Vapi's own docs was rejected by its API, and I switched hosting when Railway paused sign-ups. Railway's pause is a good example of a vendor blocker: document it and move on.
 
 ## If you know .NET

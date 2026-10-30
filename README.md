@@ -101,11 +101,11 @@ The caller should always hear something, and internals should never reach them.
 | Retried webhook | The call row is locked in a transaction. The retry finds the patient already saved and creates no second one. |
 | Database down or slow | Short timeouts, so the webhook still replies 200 with status `failed`. The agent says so, retries once, then says nothing was saved. Measured below. |
 | A tool hangs | An 8 second limit, inside Vapi's 15 second webhook timeout. If the write commits late, the retry is safe because it is idempotent. |
-| Our server is unreachable | Each tool has a `request-failed` message telling the model to speak rather than go quiet. |
+| Our server is slow or unreachable | After 3 seconds any tool says "still working on that". If the 15 second webhook limit passes, its `request-failed` message tells the model to speak rather than go quiet. A save is safe to retry. **Not tested against a real cold start.** |
 | Malformed payload | Handled per entry. No crash and no write. |
 | Call drops midway | The end-of-call report stores the transcript as `incomplete`. No partial patient is created. |
 | Caller wants to start over | Handled in the prompt, and safe because nothing is written before confirmation. |
-| Caller goes quiet | A check-in at 12 seconds and a polite hang-up at 25, using Vapi's speech timeout hooks. On the real call Vapi applied its own cut-off at 30 seconds of silence, so both have to come before that. The hooks themselves have not yet been seen firing. |
+| Caller goes quiet | A check-in at 12 seconds and a polite hang-up at 25, using Vapi's speech timeout hooks. On a real call Vapi applied its own cut-off at 30 seconds of silence, so both have to come before that. Seen working on scripted calls. |
 | Voice or speech-to-text provider fails | Fallback providers are configured. Vapi picks its own fallback models for the LLM. |
 | Every provider fails, or the 15 minute limit is reached | **Vapi ends the call with no spoken message.** Vapi's assistant hooks offer no spoken action for this. The end reason is stored, and nothing unconfirmed is saved. |
 
@@ -126,7 +126,7 @@ The rule: if code can do it, the model doesn't. That removes model turns and mak
 | `book_appointment` | 11.1 ms | 19.8 ms |
 | `update_patient` | 11.9 ms | 16.9 ms |
 
-**A whole turn, from Vapi's metrics on the first real call:** about 2.2 to 3.6 seconds on normal turns, with model time around 0.6 seconds, voice around 0.5 to 0.8, and most of the rest the wait after a caller stops speaking. A few turns ran up to 8.5 seconds, including when OpenAI returned no response and Vapi retried. That call was before the changes below. **The second call, after them, had a median turn of 1.6 seconds and a worst turn of 3.0**, with model 0.7, voice 0.3 and the wait after the caller stopped 0.3. Our webhook took about 0.2 seconds there, including the network to Render, so it is not the bottleneck.
+**A whole turn, from Vapi's metrics on the first real call:** about 2.2 to 3.6 seconds on normal turns, with model time around 0.6 seconds, voice around 0.5 to 0.8, and most of the rest the wait after a caller stops speaking. A few turns ran up to 8.5 seconds, including when OpenAI returned no response and Vapi retried. That call was before the changes below. **The second call, after them, had a median turn of 1.6 seconds and a worst turn of 3.0**, with model 0.7, voice 0.3 and the wait after the caller stopped 0.3. Later scripted calls ran between 1.8 and 2.6 seconds, depending on how long the agent waits through pauses in digits. Our webhook took about 0.2 seconds there, including the network to Render, so it is not the bottleneck.
 
 **Other choices:**
 
@@ -196,7 +196,7 @@ curl -X POST https://carecloud-voice-agent-3h0y.onrender.com/patients -H "Conten
 | Speech to text | Deepgram Flux with English and Spanish hints | Deepgram nova-3 `multi` | `multi` heard a Pakistani accent as Hindi on the real call. The hints bias it to the two languages the agent speaks. |
 | Backend | Node, TypeScript, Fastify | Python with FastAPI | The language I can defend line by line today. Types catch mistakes in the payload handling. |
 | Database | PostgreSQL | SQLite | Real enum, UUID, CHECK constraints and row locks. The idempotent save relies on the row lock. |
-| Hosting | Render, kept awake by an uptime monitor | Railway | Railway was the plan, but it has paused all new sign-ups after an October 2026 incident, with no reopening date. Render's free tier sleeps after 15 minutes idle and takes about a minute to wake, so a monitor calls `/health` every 5 minutes. |
+| Hosting | Render, kept awake by the app itself | Railway | Railway was the plan, but it has paused all new sign-ups after an October 2026 incident, with no reopening date. Render's free tier sleeps after 15 minutes idle and takes about a minute to wake, so the app requests its own `/health` every 10 minutes, with a GitHub Actions ping as backup. Neither needs another account. |
 | SQL access | Plain `pg` with parameterized queries | An ORM | Every query is visible and easy to explain. Injection is covered by parameters. |
 
 ## Setup
@@ -234,7 +234,7 @@ npm test
 1. In Render, create a free Postgres database in the Oregon region. Copy its **Internal Database URL**.
 2. Create a free Web Service from this repo, also in Oregon. Build command `npm ci && npm run build`, start command `npm start`, health check path `/health`.
 3. Set `DATABASE_URL` to the internal URL, `VAPI_WEBHOOK_SECRET` to any long random string, and `PORT` to `10000`. Migrations run on every start and are safe to repeat.
-4. Point an uptime monitor at `/health` every 5 minutes, so the app never sleeps.
+4. The app keeps itself awake using `RENDER_EXTERNAL_URL`, which Render sets. `.github/workflows/keep-awake.yml` is the backup: change the URL in it to yours.
 5. Locally, set `VAPI_API_KEY`, `PUBLIC_BASE_URL` and the same `VAPI_WEBHOOK_SECRET`, then run:
 
 ```bash
@@ -255,11 +255,25 @@ This creates or updates the assistant, attaches a free U.S. number, and prints i
 
 ## Testing notes
 
-**Automated:** `npm test` runs 150 tests against a real Postgres, with no mocks of the database. They cover the validator, the REST API, the webhook, appointments, and the guardrails. Webhook tests use payloads shaped from Vapi's docs and OpenAPI document.
+**The real phone line has not been dialled.** Vapi reports the number as active and bound to the assistant. This was built from Karachi, and a free Vapi number cannot place outbound calls, so it could not be tested from code. A request to call it from itself was refused.
 
-**Run by hand:** the built server over HTTP, with 30 simulated calls replayed through the webhook, a real Postgres kill and recovery, and a restart with data surviving.
+**Automated:** `npm test` runs 153 tests against a real Postgres, with no mocks of the database. They cover the validator, the REST API, the webhook, appointments, the guardrails and the keep-awake. Webhook tests use payloads shaped from Vapi's docs and OpenAPI document.
 
-**Two real voice calls, in Vapi's browser test, from Karachi.** Both registered a patient, and the record, transcript and appointment reached the database and API. Validation re-asks, the read-back and the prompt cache all worked. They also found real problems, which is why they mattered:
+**By hand on the server:** 30 simulated calls replayed through the webhook, a real Postgres kill and recovery, and a restart with data surviving.
+
+**Real voice calls, in Vapi's browser test, by a person:** two. Both registered a patient, and the record, transcript and appointment reached the database and API.
+
+**Scripted spoken calls:** a script here played computer-generated speech to the live agent over Vapi's WebSocket transport, going through the real transcriber, model, voice, webhook and database. This covers everything except the phone network and a human voice. Shown working on these calls:
+
+- A correction during the read-back ("spelled R-I-V-E-R-A, not Rivers"), saved correctly as Rivera, and shown on the API and dashboard.
+- All answers given at once, with nothing asked twice.
+- Appointment times offered from the calendar, a vague "yes please" asked again, and a booking saved.
+- The silence check-in and polite hang-up, and the closing line.
+- The switch to Spanish: "Hablo espanol" got "Claro, hablaremos en español".
+
+**Not shown yet:** a full registration in Spanish, the "You're booked for" line spoken before the closing, the read-back rule added after the last call, a real cold start, and most of the injection cases in `docs/ADVERSARIAL_TESTS.md`.
+
+**What the real calls found, and what changed:**
 
 | Found on the call | Cause, from Vapi's logs | Change |
 |---|---|---|
@@ -273,8 +287,6 @@ This creates or updates the assistant, attaches a free U.S. number, and prints i
 | Second call: a minute arguing that "two thousand" was an incomplete year | The model judged the date itself instead of asking the server | The prompt forbids that, and the validator now reads day-first dates |
 | Second call: guessed Friday when no day was named | The tool offered a weekday option the model filled in anyway | That option is removed, and code gives the earliest times |
 
-**Not yet verified:** the last three fixes in the table, which came after the second call, and **the real phone line.** The number is active and bound to the assistant according to Vapi, but no call has come through the phone network, because it has not yet been dialled from a phone. Spanish, and most injection cases, are also still to run. `docs/ADVERSARIAL_TESTS.md` is the checklist.
-
 ## Known limitations and trade-offs
 
 - **The REST API and dashboard have no authentication.** This is deliberate, so reviewers can use them. Rate limiting is the only protection. Any real deployment would need auth before anything else, because this would be health information.
@@ -282,7 +294,8 @@ This creates or updates the assistant, attaches a free U.S. number, and prints i
 - **Identity is a phone number plus date of birth.** That is stronger than a phone number alone, and a real system would want more. The first and last name on a record are read out on a phone match, because the duplicate question asks for that.
 - **Some failures end the call silently.** See the failure table. Fallback providers reduce the chance, but cannot remove it.
 - **Speech recognition struggles with some accents and with digits.** On the real call, a 10-digit phone number took several tries. The agent now reads back what it heard and asks in groups, but it can only work with what it hears. The validator's error messages are in English, and the model translates them.
-- **Render's free tier sleeps without traffic,** and depends on the uptime monitor. If the monitor stops, the first caller after 15 idle minutes hits a one-minute wake-up and the agent reports a failure. Free Postgres also expires after 30 days. Render's paid plan removes the first problem.
+- **Render's free tier can still restart or sleep.** The self-request stops it idling out but cannot wake it, and GitHub can delay the backup ping. If it does sleep, the first caller waits for it to wake, and the agent says it is still working, then that the save failed. Render's paid plan removes this. Free Postgres also expires after 30 days.
+- **Digits are the weakest part of speech recognition.** On a scripted call, "zero one four two" was heard as "zero one one four two", and the model dropped a digit to fit, which saved a wrong number that still passed validation. The read-back is the only guard, and it depends on the caller listening.
 - **Duplicate detection is by phone number only.** The same person calling with a different number becomes a second record.
 - **One patient and one appointment per call.** This follows from the idempotency key. A second person means a second call.
 - **The calendar is mock data**: one provider, fixed times, no cancelling, and times shown without a time zone.
@@ -358,7 +371,7 @@ const THE_CALL = `THE CALL
 4. Ask: "For your record, should I put male, female, other, or would you rather decline to answer?"
 5. Get street address, then "Any apartment or unit number?", then city, state and ZIP. Take the state however they say it, and never ask for an abbreviation. Call check_fields with state and ZIP together.
 6. Offer once: "I can also collect your email, insurance information, emergency contact, and preferred language. Would you like to provide any of those?" If they say no, go straight to the read-back and don't ask for any optional detail again. Collect only what they want, checking emails, member IDs and contact phones with check_fields.
-7. Read it all back in one natural passage, spelling the last name letter by letter, and ask "Did I get all of that right?"
+7. Read back every detail in one natural passage, always starting with their full name, spelling the last name letter by letter, and their phone number. Then ask "Did I get all of that right?"
 8. Only after a clear yes, call save_patient with caller_confirmed true.
 9. On saved, say "You're all set," and their first name. Then ask if they'd like to book a first appointment.
 If yes, ask what day or time suits them and call get_appointment_slots. Pass date or time_of_day only if they asked for one, and otherwise send nothing, which gives the earliest times. For a specific day, work out its date from today's date, so "tomorrow" means the day after today. The clinic is closed on weekends. If requested_time_unavailable is true, say so before offering what it returned. After they choose and agree, call book_appointment with that slot's value and caller_confirmed true.
