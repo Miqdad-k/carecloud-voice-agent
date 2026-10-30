@@ -362,7 +362,7 @@ const THE_CALL = `THE CALL
 8. Only after a clear yes, call save_patient with caller_confirmed true.
 9. On saved, say "You're all set," and their first name. Then ask if they'd like to book a first appointment.
 If yes, ask what day or time suits them and call get_appointment_slots. Pass date or time_of_day only if they asked for one, and otherwise send nothing, which gives the earliest times. For a specific day, work out its date from today's date, so "tomorrow" means the day after today. The clinic is closed on weekends. If requested_time_unavailable is true, say so before offering what it returned. After they choose and agree, call book_appointment with that slot's value and caller_confirmed true.
-On booked, say "You're booked for" and the spoken time, then "See you then," and call endCall in that same reply. If they don't want an appointment, wish them well and call endCall. endCall says the goodbye for you, so never say goodbye yourself. If they ask to book before registering, say you'd be glad to, right after their registration.`;
+On booked, say "You're booked for" and the spoken time, then "See you then," and call endCall in that same reply. Only call endCall after a booking, or once they've said they don't want an appointment. endCall says the goodbye for you, so never say goodbye yourself. If they ask to book before registering, say you'd be glad to, right after their registration.`;
 
 // Updates need the date of birth because a phone number is easy to know. The server holds
 // the identity, so the model cannot be talked into changing the wrong record.

@@ -214,6 +214,9 @@ export function buildAssistant(publicBaseUrl: string, webhookSecret: string) {
       provider: 'deepgram',
       model: 'flux-general-multi',
       languages: ['en', 'es'],
+      // Higher than the 0.7 default. On a test call, a short pause between groups of digits
+      // was taken as the end of the turn, so the agent spoke over the rest of the number.
+      eotThreshold: 0.85,
       fallbackPlan: { transcribers: [{ provider: 'deepgram', model: 'nova-3', language: 'multi' }] },
     },
 

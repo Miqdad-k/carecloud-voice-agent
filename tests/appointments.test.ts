@@ -62,6 +62,7 @@ describe('get_appointment_slots', () => {
   it('offers three, and falls back to the earliest if nothing fits', async () => {
     const outcome = await callTool('get_appointment_slots', {});
     expect(outcome.slots).toHaveLength(3);
+    expect(outcome.next).toContain('Do not end the call');
 
     const nonsense = await callTool('get_appointment_slots', { date: 'someday' });
     expect(nonsense.slots).toEqual(outcome.slots);
