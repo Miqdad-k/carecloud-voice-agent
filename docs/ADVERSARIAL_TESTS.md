@@ -29,7 +29,7 @@ Not automated by design: `caller_confirmed` is set by the model. A fooled model 
 
 ## Live calls: the model's behavior
 
-Only a real call can test these, because they depend on the model and the voice pipeline. **None have been run yet.** Run them after deploying and record the result here.
+Only a real call can test these, because they depend on the model and the voice pipeline. **None have been run deliberately yet.** Record the result here.
 
 | # | Say this | Pass means | Result |
 |---|---|---|---|
@@ -50,15 +50,15 @@ Only a real call can test these, because they depend on the model and the voice 
 
 | # | Scenario | Pass means | Result |
 |---|---|---|---|
-| 13 | Full registration in English | Saved, shows in the API and dashboard | Not run |
+| 13 | Full registration in English | Saved, shows in the API and dashboard | Pass, browser call on 2026-10-30 |
 | 14 | "Actually, my last name is spelled D-A-V-I-S" | Corrected, and only that detail re-confirmed | Not run |
 | 15 | Give ZIP before the street, or several answers at once | Nothing asked twice | Not run |
 | 16 | Interrupt the agent mid-sentence | Stops and carries on | Not run |
-| 17 | Future date of birth, then a 3-digit phone number | Specific re-ask for that field only | Not run |
+| 17 | Future date of birth, then a 3-digit phone number | Specific re-ask for that field only | Partial: short phone numbers re-asked correctly on the browser call. Future date not tried. |
 | 18 | "Let's start over" | Starts fresh, no earlier values reappear | Not run |
 | 19 | Hang up mid-way | Dashboard shows an incomplete call, and no patient | Not run |
-| 20 | Stay silent | Check-in at about 15 seconds, polite hang-up at about 45 | Not run |
+| 20 | Stay silent | Check-in at about 12 seconds, polite hang-up at about 25 | Not run. On the first call, 30 seconds of silence ended the call with no message. |
 | 21 | Call back with the same number | Offers to update, asks for date of birth | Not run |
-| 22 | Register, then book an appointment | Booked, and shows on the dashboard | Not run |
+| 22 | Register, then book an appointment | Booked, and shows on the dashboard | Failed on the browser call: it booked, then went silent. Changed since, not yet retested. |
 | 23 | "Hablo español", then register fully | Agent stays in Spanish, preferred language saved as Spanish | Not run |
 | 24 | Stop the app on Railway mid-call, then ask it to save | Agent speaks instead of going silent | Not run |

@@ -48,7 +48,13 @@ describe('the mock calendar', () => {
 
   it('filters by day and time of day', () => {
     const tuesdayAfternoon = slots.filter((s) => matchesPreference(s, { day: 'Tuesday', time_of_day: 'afternoon' }));
-    expect(tuesdayAfternoon.map((s) => s.slot)).toEqual(['2026-11-03T13:00', '2026-11-03T15:30', '2026-11-10T13:00', '2026-11-10T15:30']);
+    expect(tuesdayAfternoon.slice(0, 3).map((s) => s.slot)).toEqual(['2026-11-03T13:00', '2026-11-03T15:30', '2026-11-10T13:00']);
+  });
+
+  it('filters by an exact date, and reaches about four weeks out', () => {
+    expect(slots.filter((s) => matchesPreference(s, { date: '11/19/2026' }))).toHaveLength(4);
+    expect(slots.filter((s) => matchesPreference(s, { date: '10/31/2026' }))).toEqual([]);
+    expect(slots.filter((s) => matchesPreference(s, { date: 'tomorrow' }))).toEqual([]);
   });
 });
 
@@ -59,6 +65,8 @@ describe('get_appointment_slots', () => {
 
     const nonsense = await callTool('get_appointment_slots', { day: 'Someday' });
     expect(nonsense.slots).toEqual(outcome.slots);
+    expect(outcome.requested_time_unavailable).toBeUndefined();
+    expect(nonsense.requested_time_unavailable).toBe(true);
   });
 
   it('no longer offers a slot once it is booked', async () => {

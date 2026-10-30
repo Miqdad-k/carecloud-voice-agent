@@ -7,11 +7,11 @@ const SLOTS_TO_OFFER = 3;
 
 // A few choices are easier to take in by ear than a full calendar. If nothing fits the
 // caller's preference, the earliest open slots are offered instead.
-export async function findOpenSlots(preference: SlotPreference = {}): Promise<Slot[]> {
+export async function findOpenSlots(preference: SlotPreference = {}): Promise<{ slots: Slot[]; preferenceMet: boolean }> {
   const booked = await listBookedSlots(pool);
   const open = allSlots().filter((s) => !booked.has(s.slot));
   const preferred = open.filter((s) => matchesPreference(s, preference));
-  return (preferred.length ? preferred : open).slice(0, SLOTS_TO_OFFER);
+  return { slots: (preferred.length ? preferred : open).slice(0, SLOTS_TO_OFFER), preferenceMet: preferred.length > 0 };
 }
 
 export type BookResult =
@@ -42,5 +42,5 @@ export async function bookAppointmentForCall(callId: string, callerNumber: strin
   });
 
   // Read after the transaction, so the alternatives reflect the slot that was just lost.
-  return result.kind === 'slot_taken' ? { kind: 'slot_taken', alternatives: await findOpenSlots() } : result;
+  return result.kind === 'slot_taken' ? { kind: 'slot_taken', alternatives: (await findOpenSlots()).slots } : result;
 }

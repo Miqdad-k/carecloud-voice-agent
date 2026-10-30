@@ -16,7 +16,7 @@ const PATIENT_PROPERTIES = {
   address_line_1: { type: 'string' },
   address_line_2: { type: 'string' },
   city: { type: 'string' },
-  state: { type: 'string', description: '2 letters' },
+  state: { type: 'string' },
   zip_code: { type: 'string' },
   insurance_provider: { type: 'string' },
   insurance_member_id: { type: 'string' },
@@ -32,22 +32,19 @@ const CALLER_CONFIRMED = { type: 'boolean', description: 'True only after a clea
 const { date_of_birth, phone_number, state, zip_code, email, insurance_member_id, emergency_contact_phone } = PATIENT_PROPERTIES;
 const CHECKABLE_FIELDS = { date_of_birth, phone_number, state, zip_code, email, insurance_member_id, emergency_contact_phone };
 
-// Spoken while a write is running, in the language of the call. Reads and checks stay
-// silent, since they normally return faster than a caller would notice.
-function fillers(english: string, spanish: string) {
-  const speak = (en: string, es: string) => [
-    { type: 'text', text: en, language: 'en' },
-    { type: 'text', text: es, language: 'es' },
-  ];
-  return [
-    { type: 'request-start', contents: speak(english, spanish) },
-    {
-      type: 'request-response-delayed',
-      timingMilliseconds: 5000,
-      contents: speak('Still working on it, thanks for your patience.', 'Sigo en ello, gracias por su paciencia.'),
-    },
-  ];
-}
+// Spoken only if a write is unusually slow. There is deliberately no request-start filler:
+// on the first real call, Vapi held each tool result until its filler finished speaking,
+// adding about 2.5 seconds, and when the model also spoke in that turn the tool never
+// completed and the call went silent. The server answers in about 200 ms, so no filler is
+// needed in the normal case.
+const SLOW_WRITE_FILLER = {
+  type: 'request-response-delayed',
+  timingMilliseconds: 3000,
+  contents: [
+    { type: 'text', text: 'Still working on that, thanks for your patience.', language: 'en' },
+    { type: 'text', text: 'Sigo en ello, gracias por su paciencia.', language: 'es' },
+  ],
+};
 
 // Sent if our server cannot be reached at all, which is the one failure the server itself
 // cannot report. Passed to the model as an instruction, so it speaks instead of going quiet.
@@ -99,7 +96,7 @@ const TOOLS = [
       ],
       additionalProperties: false,
     },
-    [...fillers('One moment while I save that.', 'Un momento mientras lo guardo.'), WRITE_UNREACHABLE],
+    [SLOW_WRITE_FILLER, WRITE_UNREACHABLE],
   ),
   tool(
     'verify_identity',
@@ -124,7 +121,7 @@ const TOOLS = [
       required: ['caller_confirmed'],
       additionalProperties: false,
     },
-    [...fillers('One moment while I update that.', 'Un momento mientras lo actualizo.'), WRITE_UNREACHABLE],
+    [SLOW_WRITE_FILLER, WRITE_UNREACHABLE],
   ),
   tool(
     'get_appointment_slots',
@@ -132,6 +129,7 @@ const TOOLS = [
     {
       type: 'object',
       properties: {
+        date: { type: 'string', description: 'A specific day, MM/DD/YYYY' },
         day: { type: 'string', enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] },
         time_of_day: { type: 'string', enum: ['morning', 'afternoon'] },
       },
@@ -151,7 +149,7 @@ const TOOLS = [
       required: ['slot', 'caller_confirmed'],
       additionalProperties: false,
     },
-    [...fillers('One moment while I book that.', 'Un momento mientras lo reservo.'), WRITE_UNREACHABLE],
+    [SLOW_WRITE_FILLER, WRITE_UNREACHABLE],
   ),
   // Vapi's built-in hang-up tool. The agent says goodbye itself, then calls it.
   { type: 'endCall' },
@@ -177,8 +175,8 @@ export function buildAssistant(publicBaseUrl: string, webhookSecret: string) {
     model: {
       provider: 'openai',
       model: MODEL,
-      // Low, because tool arguments should be accurate more than they should be varied.
-      temperature: 0.3,
+      // Low enough for accurate tool arguments, high enough that replies vary.
+      temperature: 0.5,
       // The default of 250 tokens can cut off a long read-back.
       maxTokens: 350,
       // A fixed key groups every call's identical prefix for OpenAI's automatic prompt
@@ -188,46 +186,53 @@ export function buildAssistant(publicBaseUrl: string, webhookSecret: string) {
       tools: TOOLS,
     },
 
-    // An Azure multilingual voice, which speaks whichever language the text is in. Azure
-    // rather than a Vapi voice, because Vapi's own voices have no fallback option in the
-    // schema. Vapi's docs show the ID "multilingual-auto", but its API rejects that.
+    // ElevenLabs, because the Azure voice on the first real call sounded robotic. The flash
+    // model is built for low delay and speaks whichever language the text is in. Azure stays
+    // as the fallback. Vapi's own voices have no fallback option in the schema.
     voice: {
-      provider: 'azure',
-      voiceId: 'en-US-EmmaMultilingualNeural',
-      fallbackPlan: { voices: [{ provider: 'vapi', voiceId: 'Elliot' }] },
+      provider: '11labs',
+      voiceId: 'sarah',
+      model: 'eleven_flash_v2_5',
+      fallbackPlan: { voices: [{ provider: 'azure', voiceId: 'en-US-EmmaMultilingualNeural' }] },
     },
 
-    // "multi" is the setup Vapi's docs recommend for language switching on one assistant.
+    // Flux with language hints, not nova-3 "multi". On the first real call "multi" heard a
+    // Pakistani accent as Hindi, so "Karachi" came through in another script. The hints bias
+    // it to the two languages the agent actually speaks.
     transcriber: {
       provider: 'deepgram',
-      model: 'nova-3',
-      language: 'multi',
-      fallbackPlan: { transcribers: [{ provider: 'deepgram', model: 'nova-2', language: 'multi' }] },
+      model: 'flux-general-multi',
+      languages: ['en', 'es'],
+      fallbackPlan: { transcribers: [{ provider: 'deepgram', model: 'nova-3', language: 'multi' }] },
     },
 
-    // Respond quickly in general, but wait longer after a number, so the agent doesn't
-    // jump in while someone is pausing halfway through a phone number or ZIP code.
+    // The first real call made 49 model requests, because one answer arriving in fragments
+    // started a new reply for each fragment, and the replies overlapped into repeats. Waiting
+    // a little longer lets the fragments join up. Requiring two words before the agent stops
+    // talking means a cough or a stray noise can't cut it off. Vapi still stops at once on
+    // words like "stop", "no" and "actually".
     startSpeakingPlan: {
-      waitSeconds: 0.4,
+      waitSeconds: 0.6,
       transcriptionEndpointingPlan: {
-        onPunctuationSeconds: 0.1,
+        onPunctuationSeconds: 0.5,
         onNoPunctuationSeconds: 1.5,
         onNumberSeconds: 1.2,
       },
     },
+    stopSpeakingPlan: { numWords: 2 },
 
     hooks: [
       // Never sit in silence. A gentle check first, since the caller may be finding an
-      // insurance card, then a polite hang-up. "prompt" rather than fixed text, so it
+      // insurance card, then a polite hang-up, before Vapi's own 30 second silence cut-off. "prompt" rather than fixed text, so it
       // comes out in the language of the call.
       {
         on: 'customer.speech.timeout',
-        options: { timeoutSeconds: 15, triggerMaxCount: 2, triggerResetMode: 'onUserSpeech' },
+        options: { timeoutSeconds: 12, triggerMaxCount: 2, triggerResetMode: 'onUserSpeech' },
         do: [{ type: 'say', prompt: 'In one short sentence, in the language of this call, check the caller is still there and say to take their time.' }],
       },
       {
         on: 'customer.speech.timeout',
-        options: { timeoutSeconds: 45, triggerMaxCount: 1, triggerResetMode: 'onUserSpeech' },
+        options: { timeoutSeconds: 25, triggerMaxCount: 1, triggerResetMode: 'onUserSpeech' },
         do: [
           { type: 'say', prompt: 'In one short sentence, in the language of this call, say you will hang up because they seem to have stepped away, and that anything not yet confirmed was not saved.' },
           { type: 'tool', tool: { type: 'endCall' } },

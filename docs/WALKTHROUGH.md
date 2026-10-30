@@ -68,9 +68,9 @@ The prompt still has a guardrail section, because it keeps the conversation on t
 - **Our server is not the slow part.** I measured it: about 12 ms median per tool, 20 ms at p95, on 30 simulated calls. Real delay is the LLM, speech and network, which only a live call measures. `durationMs` is on every tool log.
 - **`gpt-4.1-mini`.** No reasoning step. `gpt-4o-mini` is cheaper, and I'd admit that's a judgment call: a one-line swap to test. `gpt-5-mini` has a thinking step, and delay is what a caller notices first.
 - **No mid-call model switching.** Vapi's docs say there's no action for it, only a handoff to another assistant. More failure paths, tiny saving.
-- **Prompt went from 1,289 to 944 words** while gaining Spanish, appointments and guardrails. It's re-sent every turn, so every word costs on every turn.
+- **The prompt is kept under a word budget by a test.** It's re-sent every turn, so every word costs on every turn. Model cost was only about 5% of the first call's $0.65, though, which is why I didn't chase the cheapest model.
 - **Vapi's post-call summary is off.** It would run the transcript through an LLM to tell me what I already stored.
-- **Caching:** static text first, date last, because prompt caching needs an identical prefix. Say clearly that it's unconfirmed until `cached_prompt_tokens` is above zero on a real call. Don't claim more than that.
+- **Caching is confirmed.** Static text first, date last, because prompt caching needs an identical prefix. On the first real call, 98,048 of 151,812 input tokens were cached.
 
 ## Prompt choices
 
@@ -86,13 +86,13 @@ The prompt still has a guardrail section, because it keeps the conversation on t
 
 Other choices in `assistant-config.ts`:
 
-- `onNumberSeconds: 1.2` waits longer after digits, so the agent does not cut in while someone dictates a phone number.
-- Temperature 0.3, because tool arguments should be accurate more than varied.
+- Temperature 0.5: low enough for accurate tool arguments, high enough that replies vary.
+- `numWords: 2`, so a cough can't cut the agent off, while "stop" and "no" still do at once.
 - Silence hooks use `prompt`, not fixed text, so they come out in the caller's language. That does spend a little model time, only when someone has gone quiet.
 
 ## Spanish and appointments
 
-- **Spanish** is Vapi's documented setup: `nova-3` with language `multi`, a multilingual Azure voice, and languages listed in the prompt. Tool arguments stay in one format, so the validator is unchanged. Fillers have English and Spanish variants. Worry to mention: `multi` might be weaker on English digits. Test it.
+- **Spanish** uses Deepgram Flux with English and Spanish hints, a voice that speaks either language, and languages listed in the prompt. Tool arguments stay in one format, so the validator is unchanged. Not yet tested in Spanish on a call.
 - **Appointments** are `src/appointments/slots.ts`: plain code generates the calendar and the spoken time. The model never does date math, because models get calendars wrong. A unique constraint on date and time means two callers can't take one slot, and a test races them.
 
 ## Questions they may ask
@@ -120,6 +120,17 @@ Other choices in `assistant-config.ts`:
 **Why does the prompt end with "Today's date is {{date}}"?** A model does not know today's date, and Vapi fills it in, in UTC. It's last so the prefix stays identical for caching.
 
 **How do you know tests prove anything?** I found `npm test` was exiting 0 on failure, because embedded Postgres's exit hook overwrote the code. Fixed, then confirmed with a real failing test. Good story to tell, because it shows I check the checks.
+
+## What the first real call taught me
+
+This is the best story to tell, because it's what building a voice agent is actually like. Everything passed its tests, then a real call found problems no test could. I read Vapi's logs and fixed causes rather than symptoms.
+
+- **It went silent after booking.** The booking saved. The logs showed our webhook answered in 0.2 seconds, but Vapi never marked the tool complete, because it was waiting on the "one moment" filler. Removing fillers fixed that and also removed about 2.5 seconds from every write. Not yet confirmed on a second call, so say that.
+- **It repeated itself.** One answer arrived in fragments and each started a reply: 49 model requests in one call. That's a turn-taking setting, not a prompt problem.
+- **"Karachi" got "I only speak English and Spanish".** The transcriber heard my accent as Hindi. The prompt treated a mishearing as a language choice, so I changed both.
+- **"Tomorrow" offered next Friday.** I gave the model the date without the weekday, so it guessed. Code now does the date filtering.
+
+Also: the voice ID in Vapi's own docs was rejected by its API, and I switched hosting when Railway paused sign-ups. Railway's pause is a good example of a vendor blocker: document it and move on.
 
 ## If you know .NET
 

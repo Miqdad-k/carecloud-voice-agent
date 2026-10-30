@@ -109,6 +109,14 @@ describe('validatePatient', () => {
     expect(valueOf('sex', 'prefer not to say')).toBe('Decline to Answer');
   });
 
+  it('fixes the case of names that arrive all lower or all upper, and leaves the rest', () => {
+    expect(valueOf('first_name', 'exmegdad')).toBe('Exmegdad');
+    expect(valueOf('last_name', 'KHOMUSI')).toBe('Khomusi');
+    expect(valueOf('last_name', "o'brien-smith")).toBe("O'Brien-Smith");
+    expect(valueOf('last_name', 'van der berg')).toBe('Van Der Berg');
+    expect(valueOf('last_name', 'McDonald')).toBe('McDonald');
+  });
+
   it('does not accept a made-up month name', () => {
     expect(errorsFor({ date_of_birth: 'Smarch 15, 1985' })).toEqual(['date_of_birth']);
   });

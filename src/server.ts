@@ -7,7 +7,7 @@ await migrate();
 const app = buildApp();
 await app.listen({ host: '0.0.0.0', port: Number(process.env.PORT ?? 3000) });
 
-// Railway sends SIGTERM on a redeploy. Finishing in-flight requests first means a tool
+// The host sends SIGTERM on a redeploy. Finishing in-flight requests first means a tool
 // call during a deploy still gets its answer.
 process.on('SIGTERM', async () => {
   await app.close();

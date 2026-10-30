@@ -35,13 +35,20 @@ function text(max: number, label: string) {
 // and the agent should not tell a caller their name is invalid.
 const NAME_PATTERN = /^\p{L}[\p{L}\p{M}' -]*$/u;
 
+// Speech recognition and spelled-out names arrive as "khomusi" or "KHOMUSI". Mixed case
+// such as "McDonald" was typed on purpose, so it is left alone.
+function fixNameCase(value: string): string {
+  if (value !== value.toLowerCase() && value !== value.toUpperCase()) return value;
+  return value.toLowerCase().replace(/(^|[\s'-])(\p{L})/gu, (_, before: string, letter: string) => before + letter.toUpperCase());
+}
+
 function name(label: string) {
   return (value: string): string => {
     if (value.length > 50) throw new Invalid(`${label} must be 50 characters or fewer.`);
     if (!NAME_PATTERN.test(value)) {
       throw new Invalid(`${label} can only contain letters, hyphens and apostrophes.`);
     }
-    return value;
+    return fixNameCase(value);
   };
 }
 
@@ -178,7 +185,7 @@ function contactName(value: string): string {
   if (value.length > 100 || !/^\p{L}[\p{L}\p{M}'. -]*$/u.test(value)) {
     throw new Invalid('Emergency contact name can only contain letters, hyphens, apostrophes and periods.');
   }
-  return value;
+  return fixNameCase(value);
 }
 
 // The whole data model in one table. Column names in SQL come from these keys,

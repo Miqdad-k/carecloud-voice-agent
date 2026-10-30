@@ -20,7 +20,7 @@ export function buildApp(options: AppOptions = {}) {
 
   const app = Fastify({
     bodyLimit: API_BODY_LIMIT,
-    // Railway's proxy sits in front, so the real client IP is in X-Forwarded-For.
+    // Render's proxy sits in front, so the real client IP is in X-Forwarded-For.
     // The rate limit would otherwise treat every caller as one client.
     trustProxy: true,
     logger: logging && {
