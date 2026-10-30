@@ -99,7 +99,14 @@ async function getAppointmentSlots(args: Args): Promise<ToolOutcome> {
 async function bookAppointment(args: Args, ctx: ToolContext): Promise<ToolOutcome> {
   if (args.caller_confirmed !== true) return NOT_CONFIRMED;
   const result = await bookAppointmentForCall(ctx.callId, ctx.callerNumber, args.slot);
-  if (result.kind === 'booked') return { status: result.alreadyBooked ? 'already_booked' : 'booked', spoken: result.spoken };
+  if (result.kind === 'booked') {
+    return {
+      status: result.alreadyBooked ? 'already_booked' : 'booked',
+      spoken: result.spoken,
+      // On a scripted test call the model hung up without ever saying the time.
+      next: `Say this in the language of the call: You're booked for ${result.spoken}. See you then. Then call endCall.`,
+    };
+  }
   if (result.kind === 'slot_taken') return { status: 'slot_taken', slots: result.alternatives };
   return { status: result.kind };
 }

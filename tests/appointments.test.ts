@@ -87,7 +87,9 @@ describe('book_appointment', () => {
     const callId = randomUUID();
     await registerOnCall(callId);
     const outcome = await callTool('book_appointment', { slot: firstSlot().slot, caller_confirmed: true }, callId);
-    expect(outcome).toEqual({ status: 'booked', spoken: firstSlot().spoken });
+    expect(outcome.status).toBe('booked');
+    expect(outcome.spoken).toBe(firstSlot().spoken);
+    expect(outcome.next).toContain(`You're booked for ${firstSlot().spoken}`);
 
     const { rows } = await pool.query('SELECT patient_id FROM patients');
     const api = await app.inject({ method: 'GET', url: `/patients/${rows[0].patient_id}/appointments` });
