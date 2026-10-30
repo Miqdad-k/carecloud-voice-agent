@@ -68,7 +68,8 @@ export function buildApp(options: AppOptions = {}) {
 
   app.get('/health', { config: { rateLimit: false } }, async () => {
     await pool.query('SELECT 1');
-    return { data: { status: 'ok' }, error: null };
+    // Uptime shows whether the process has stayed up, which is how keep-awake is checked.
+    return { data: { status: 'ok', uptime_seconds: Math.round(process.uptime()) }, error: null };
   });
 
   app.register(patientRoutes);

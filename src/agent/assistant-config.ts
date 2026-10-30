@@ -32,12 +32,13 @@ const CALLER_CONFIRMED = { type: 'boolean', description: 'True only after a clea
 const { date_of_birth, phone_number, state, zip_code, email, insurance_member_id, emergency_contact_phone } = PATIENT_PROPERTIES;
 const CHECKABLE_FIELDS = { date_of_birth, phone_number, state, zip_code, email, insurance_member_id, emergency_contact_phone };
 
-// Spoken only if a write is unusually slow. There is deliberately no custom request-start
+// Spoken if a tool is unusually slow, such as a first request while the host wakes up, so
+// the caller is not left in silence. There is deliberately no custom request-start
 // filler: on the first real call, "One moment while I book that" stalled when the model
 // also spoke in that turn, and the tool never completed. Without one, Vapi uses its own
 // short defaults such as "Just a sec". Its docs give no way to turn those off, and the
 // second real call completed every tool with them.
-const SLOW_WRITE_FILLER = {
+const SLOW_FILLER = {
   type: 'request-response-delayed',
   timingMilliseconds: 3000,
   contents: [
@@ -76,13 +77,13 @@ const TOOLS = [
       required: ['phone_number'],
       additionalProperties: false,
     },
-    [READ_UNREACHABLE],
+    [SLOW_FILLER, READ_UNREACHABLE],
   ),
   tool(
     'check_fields',
     'Validate answers without saving. Send only the fields to check.',
     { type: 'object', properties: CHECKABLE_FIELDS, additionalProperties: false },
-    [READ_UNREACHABLE],
+    [SLOW_FILLER, READ_UNREACHABLE],
   ),
   tool(
     'save_patient',
@@ -96,7 +97,7 @@ const TOOLS = [
       ],
       additionalProperties: false,
     },
-    [SLOW_WRITE_FILLER, WRITE_UNREACHABLE],
+    [SLOW_FILLER, WRITE_UNREACHABLE],
   ),
   tool(
     'verify_identity',
@@ -110,7 +111,7 @@ const TOOLS = [
       required: ['date_of_birth'],
       additionalProperties: false,
     },
-    [READ_UNREACHABLE],
+    [SLOW_FILLER, READ_UNREACHABLE],
   ),
   tool(
     'update_patient',
@@ -121,7 +122,7 @@ const TOOLS = [
       required: ['caller_confirmed'],
       additionalProperties: false,
     },
-    [SLOW_WRITE_FILLER, WRITE_UNREACHABLE],
+    [SLOW_FILLER, WRITE_UNREACHABLE],
   ),
   tool(
     'get_appointment_slots',
@@ -134,7 +135,7 @@ const TOOLS = [
       },
       additionalProperties: false,
     },
-    [READ_UNREACHABLE],
+    [SLOW_FILLER, READ_UNREACHABLE],
   ),
   tool(
     'book_appointment',
@@ -148,7 +149,7 @@ const TOOLS = [
       required: ['slot', 'caller_confirmed'],
       additionalProperties: false,
     },
-    [SLOW_WRITE_FILLER, WRITE_UNREACHABLE],
+    [SLOW_FILLER, WRITE_UNREACHABLE],
   ),
   // Vapi's built-in hang-up tool. With no message it just says "Goodbye", which is all a
   // caller heard after booking on a real call. Set here, the closing line plays every time
