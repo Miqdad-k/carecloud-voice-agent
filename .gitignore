@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.log
+.local-postgres/
+coverage/
+# The challenge brief is confidential and never belongs in this repo.
+*.pdf

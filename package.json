@@ -1,0 +1,34 @@
+{
+  "name": "carecloud-voice-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Voice agent that registers patients over the phone, with a REST API and dashboard.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "migrate": "tsx src/db/migrate.ts",
+    "seed": "tsx src/db/seed.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "vapi:sync": "tsx src/agent/sync-assistant.ts",
+    "db:local": "tsx scripts/local-postgres.ts"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.9",
+    "fastify": "^5.12.7",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "embedded-postgres": "^18.4.0-beta.17",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}
