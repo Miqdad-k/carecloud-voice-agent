@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import { listAppointmentsForPatient } from '../appointments/repository.js';
 import { listCallsForPatient } from '../calls/repository.js';
 import { pool } from '../db/pool.js';
 import { findPatient, listPatients, softDeletePatient } from '../patients/repository.js';
@@ -16,8 +17,8 @@ function isObject(body: unknown): boolean {
 
 function sendWriteResult(reply: FastifyReply, result: WriteResult, successStatus: number) {
   if (result.kind === 'ok') return reply.code(successStatus).send({ data: result.patient, error: null });
-  if (result.kind === 'not_found') return fail(reply, 404, 'Patient not found.');
-  return fail(reply, 422, 'Validation failed.', result.errors);
+  if (result.kind === 'invalid') return fail(reply, 422, 'Validation failed.', result.errors);
+  return fail(reply, 404, 'Patient not found.');
 }
 
 // 400 means the request itself is malformed: bad JSON, a bad UUID, a bad filter.
@@ -41,6 +42,13 @@ export async function patientRoutes(app: FastifyInstance) {
     const patient = await findPatient(pool, req.params.id);
     if (!patient) return fail(reply, 404, 'Patient not found.');
     return { data: await listCallsForPatient(pool, req.params.id), error: null };
+  });
+
+  app.get<{ Params: { id: string } }>('/patients/:id/appointments', async (req, reply) => {
+    if (!isUuid(req.params.id)) return fail(reply, 400, 'Patient ID must be a UUID.');
+    const patient = await findPatient(pool, req.params.id);
+    if (!patient) return fail(reply, 404, 'Patient not found.');
+    return { data: await listAppointmentsForPatient(pool, req.params.id), error: null };
   });
 
   app.post('/patients', async (req, reply) => {

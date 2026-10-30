@@ -42,6 +42,11 @@ export default async function setup() {
     postgresFlags: ['-c', 'io_method=sync'],
     onLog: () => {},
   });
+  // embedded-postgres installs an exit hook that calls process.exit(0), which would hide
+  // vitest's failure code and make a failing run look like a pass. Keep the real code.
+  const exit = process.exit;
+  process.exit = ((code) => exit(process.exitCode || code)) as typeof process.exit;
+
   await postgres.initialise();
   await postgres.start();
   await postgres.createDatabase('carecloud_test');

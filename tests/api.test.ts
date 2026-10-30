@@ -4,7 +4,7 @@ import { migrate } from '../src/db/migrate.js';
 import { pool } from '../src/db/pool.js';
 import { validPatient } from './helpers.js';
 
-const app = buildApp({ logger: false });
+const app = buildApp({ logger: false, rateLimitPerMinute: 1000 });
 
 beforeAll(async () => {
   await migrate();
@@ -12,7 +12,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await pool.query('TRUNCATE calls, patients');
+  await pool.query('TRUNCATE appointments, calls, patients');
 });
 
 afterAll(async () => {

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { listAllAppointments, type Appointment } from '../appointments/repository.js';
 import { listAllCalls, type Call } from '../calls/repository.js';
 import { pool } from '../db/pool.js';
 import { listPatients, type Patient } from '../patients/repository.js';
@@ -40,7 +41,7 @@ function renderCall(call: Call): string {
     </details>`;
 }
 
-function renderPatient(patient: Patient, calls: Call[]): string {
+function renderPatient(patient: Patient, calls: Call[], appointments: Appointment[]): string {
   const address = [patient.address_line_1, patient.address_line_2, patient.city, `${patient.state} ${patient.zip_code}`]
     .filter(Boolean)
     .join(', ');
@@ -58,6 +59,7 @@ function renderPatient(patient: Patient, calls: Call[]): string {
         ${field('Language', patient.preferred_language)}
         ${field('Emergency contact', patient.emergency_contact_name)}
         ${field('Emergency phone', formatPhone(patient.emergency_contact_phone))}
+        ${field('Appointment', appointments.map((a) => `${a.date} at ${a.time} (mock)`).join(', ') || null)}
         ${field('Registered', formatTime(patient.created_at))}
       </dl>
       ${calls.length ? calls.map(renderCall).join('') : '<p class="muted">No calls on record. Added through the API or seed.</p>'}
@@ -88,7 +90,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
   app.get('/', async (_req, reply) => reply.redirect('/dashboard'));
 
   app.get('/dashboard', async (_req, reply) => {
-    const [patients, calls] = await Promise.all([listPatients(pool), listAllCalls(pool)]);
+    const [patients, calls, appointments] = await Promise.all([listPatients(pool), listAllCalls(pool), listAllAppointments(pool)]);
     const unfinished = calls.filter((call) => !call.patient_id);
 
     const html = `<!doctype html>
@@ -103,7 +105,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
 <main>
   <h1>Patient registrations</h1>
   <p class="muted">${patients.length} registered. Data on this page is synthetic.</p>
-  ${patients.map((p) => renderPatient(p, calls.filter((c) => c.patient_id === p.patient_id))).join('')}
+  ${patients.map((p) => renderPatient(p, calls.filter((c) => c.patient_id === p.patient_id), appointments.filter((a) => a.patient_id === p.patient_id))).join('')}
   ${patients.length ? '' : '<p>No patients registered yet.</p>'}
   ${unfinished.length ? `
   <h3>Calls with no registration</h3>
@@ -113,6 +115,8 @@ export async function dashboardRoutes(app: FastifyInstance) {
 </body>
 </html>`;
 
+    // No scripts at all. Even if escaping ever missed something, the browser won't run it.
+    reply.header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'");
     return reply.type('text/html; charset=utf-8').send(html);
   });
 }

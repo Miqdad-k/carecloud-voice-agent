@@ -7,6 +7,10 @@ export const pool = new pg.Pool({
   connectionString: requireEnv('DATABASE_URL'),
   connectionTimeoutMillis: 5000,
   query_timeout: 5000,
+  // Keep connections open, so a tool call during a quiet spell doesn't pay for a new
+  // connection while the caller waits.
+  keepAlive: true,
+  idleTimeoutMillis: 0,
 });
 
 // Without this listener, a dropped idle connection would crash the process.

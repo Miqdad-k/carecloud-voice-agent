@@ -66,6 +66,10 @@ export function endOfCallPayload(callId: string, endedReason: string, transcript
       startedAt: '2026-10-30T10:00:00.000Z',
       endedAt: '2026-10-30T10:03:00.000Z',
       cost: 0.21,
+      costs: [
+        { type: "transcriber", minutes: 3, cost: 0.03 },
+        { type: "model", model: {}, promptTokens: 42000, completionTokens: 900, cachedPromptTokens: 30000, cost: 0.02 },
+      ],
     },
   };
 }

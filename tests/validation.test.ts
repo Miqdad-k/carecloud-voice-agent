@@ -86,7 +86,7 @@ describe('validatePatient', () => {
   it.each([
     ['sex', 'Unknown'],
     ['state', 'ZZ'],
-    ['state', 'California'],
+    ['state', 'Narnia'],
     ['zip_code', '1234'],
     ['zip_code', '12345-678'],
     ['email', 'not-an-email'],
@@ -94,6 +94,23 @@ describe('validatePatient', () => {
     ['emergency_contact_phone', '555'],
   ])('rejects %s = %s', (field, value) => {
     expect(errorsFor({ [field]: value })).toEqual([field]);
+  });
+
+  it('normalises spoken forms in code, so no model turn is spent on them', () => {
+    expect(valueOf('state', 'california')).toBe('CA');
+    expect(valueOf('state', 'New York')).toBe('NY');
+    expect(valueOf('date_of_birth', 'March 15, 1985')).toBe('1985-03-15');
+    expect(valueOf('date_of_birth', 'march 15th 1985')).toBe('1985-03-15');
+    expect(valueOf('date_of_birth', '3-15-1985')).toBe('1985-03-15');
+    expect(valueOf('phone_number', 'two zero two five five five oh one four seven')).toBe('2025550147');
+    expect(valueOf('phone_number', 'dos cero dos 555 0147')).toBe('2025550147');
+    expect(valueOf('zip_code', 'six two seven zero one')).toBe('62701');
+    expect(valueOf('sex', 'F')).toBe('Female');
+    expect(valueOf('sex', 'prefer not to say')).toBe('Decline to Answer');
+  });
+
+  it('does not accept a made-up month name', () => {
+    expect(errorsFor({ date_of_birth: 'Smarch 15, 1985' })).toEqual(['date_of_birth']);
   });
 
   it('rejects unknown fields and non-text values', () => {

@@ -1,12 +1,14 @@
 // The parts of Vapi's server messages this app reads. Field names checked against
 // Vapi's OpenAPI document (https://api.vapi.ai/api-json) and its docs on 2026-10-30.
+// Everything is optional here on purpose: this is outside input, and the handlers cope
+// with anything missing rather than trusting the shape.
 
 export type VapiToolCall = {
-  id: string;
-  type: string;
+  id?: string;
+  type?: string;
   // Vapi's docs show an object here and its OpenAPI document says string, so the
   // handler accepts both.
-  function: { name: string; arguments: Record<string, unknown> | string };
+  function?: { name?: string; arguments?: unknown };
 };
 
 type VapiCall = { id?: string; customer?: { number?: string } };
@@ -15,7 +17,7 @@ export type VapiToolCallsMessage = {
   type: 'tool-calls';
   call?: VapiCall;
   customer?: { number?: string };
-  toolCallList: VapiToolCall[];
+  toolCallList?: VapiToolCall[];
 };
 
 export type VapiEndOfCallReport = {
@@ -27,6 +29,9 @@ export type VapiEndOfCallReport = {
   analysis?: { summary?: string };
   startedAt?: string;
   endedAt?: string;
+  cost?: number;
+  // One entry per component. The model's entry carries the token counts.
+  costs?: { type?: string; promptTokens?: number; completionTokens?: number; cachedPromptTokens?: number }[];
 };
 
 export type VapiMessage = VapiToolCallsMessage | VapiEndOfCallReport | { type: string };

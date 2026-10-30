@@ -35,6 +35,8 @@ export async function vapiWebhookRoutes(app: FastifyInstance) {
     '/vapi/webhook',
     {
       bodyLimit: WEBHOOK_BODY_LIMIT,
+      // Already authenticated, and a live call must never be throttled.
+      config: { rateLimit: false },
       // onRequest runs before the body is parsed, so an unauthenticated caller
       // cannot make the server do any work.
       onRequest: async (req, reply) => {
@@ -65,16 +67,19 @@ export async function vapiWebhookRoutes(app: FastifyInstance) {
 }
 
 async function handleToolCalls(message: VapiToolCallsMessage, req: FastifyRequest) {
-  const context = {
-    // Falls back to a per-request ID so a save is never keyed on nothing.
-    callId: message.call?.id ?? `unknown-${req.id}`,
-    callerNumber: callerNumberOf(message),
-  };
+  const callId = message.call?.id;
+  const toolCalls = Array.isArray(message.toolCallList) ? message.toolCallList : [];
 
   const results: VapiToolResult[] = await Promise.all(
-    (message.toolCallList ?? []).map(async (toolCall) => {
-      const outcome = await runTool(toolCall.function.name, toolCall.function.arguments, context, req.log);
-      return { name: toolCall.function.name, toolCallId: toolCall.id, result: JSON.stringify(outcome) };
+    // An entry with no ID cannot be answered, since Vapi matches replies by that ID.
+    toolCalls.filter((toolCall) => toolCall?.id).map(async (toolCall) => {
+      const name = String(toolCall.function?.name ?? 'unknown');
+      // Every tool is keyed on the call. Without an ID, idempotency and the identity
+      // binding have nothing to hold on to, so nothing runs.
+      const outcome = callId
+        ? await runTool(name, toolCall.function?.arguments, { callId, callerNumber: callerNumberOf(message) }, req.log)
+        : { status: 'failed' };
+      return { name, toolCallId: toolCall.id!, result: JSON.stringify(outcome) };
     }),
   );
   return { results };
@@ -83,9 +88,17 @@ async function handleToolCalls(message: VapiToolCallsMessage, req: FastifyReques
 async function handleEndOfCallReport(message: VapiEndOfCallReport, req: FastifyRequest) {
   const callId = message.call?.id;
   if (!callId) {
-    req.log.error({ report: message }, 'End-of-call report without a call ID');
+    req.log.error({ endedReason: message.endedReason }, 'End-of-call report without a call ID');
     return;
   }
+
+  const model = Array.isArray(message.costs) ? message.costs.find((cost) => cost?.type === 'model') : undefined;
+  const tokens = {
+    promptTokens: model?.promptTokens ?? null,
+    completionTokens: model?.completionTokens ?? null,
+    cachedPromptTokens: model?.cachedPromptTokens ?? null,
+    costUsd: message.cost ?? null,
+  };
 
   try {
     await saveCallReport(pool, {
@@ -96,11 +109,17 @@ async function handleEndOfCallReport(message: VapiEndOfCallReport, req: FastifyR
       endedReason: message.endedReason ?? null,
       startedAt: message.startedAt ?? null,
       endedAt: message.endedAt ?? null,
+      ...tokens,
     });
-    req.log.info({ callId, endedReason: message.endedReason }, 'Stored end-of-call report');
+    req.log.info({ callId, endedReason: message.endedReason, ...tokens }, 'Stored end-of-call report');
   } catch (err) {
-    // Logged in full so the transcript can still be recovered from the logs.
-    req.log.error({ callId, report: message, err }, 'Could not store end-of-call report');
+    // The transcript is logged so it can still be recovered. Vapi's full message is not,
+    // because it also carries the assistant config, which holds the webhook secret.
+    const { message: errorMessage, code } = err as { message?: string; code?: string };
+    req.log.error(
+      { callId, transcript: message.artifact?.transcript, error: { message: errorMessage, code } },
+      'Could not store end-of-call report',
+    );
     throw err;
   }
 }

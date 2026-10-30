@@ -3,169 +3,230 @@ import { FIRST_MESSAGE, SYSTEM_PROMPT } from './system-prompt.js';
 // The Vapi assistant, defined in code so it can be reviewed, versioned and recreated.
 // Field names checked against Vapi's OpenAPI document on 2026-10-30.
 
-const string = (description: string) => ({ type: 'string', description });
-
-// Formats are described for the model, but enforced by src/patients/validation.ts.
+// Tool schemas are sent to the model on every turn, so descriptions are short and each
+// field is described once. Formats are a hint: src/patients/validation.ts enforces them
+// and rejects any field not in its table.
 const PATIENT_PROPERTIES = {
-  first_name: string('First name, using the exact spelling the caller gave.'),
-  last_name: string('Last name, using the exact spelling the caller gave.'),
-  date_of_birth: string('Date of birth as MM/DD/YYYY.'),
+  first_name: { type: 'string' },
+  last_name: { type: 'string' },
+  date_of_birth: { type: 'string', description: 'MM/DD/YYYY' },
   sex: { type: 'string', enum: ['Male', 'Female', 'Other', 'Decline to Answer'] },
-  phone_number: string('10-digit U.S. phone number, digits only.'),
-  email: string('Email address.'),
-  address_line_1: string('Street number and street name.'),
-  address_line_2: string('Apartment, suite or unit, if any.'),
-  city: string('City.'),
-  state: string('2-letter U.S. state abbreviation, such as CA.'),
-  zip_code: string('5-digit ZIP code or ZIP+4.'),
-  insurance_provider: string('Name of the insurance company.'),
-  insurance_member_id: string('Insurance member or subscriber ID, letters and numbers only.'),
-  preferred_language: string('Preferred language. Leave out if not mentioned.'),
-  emergency_contact_name: string('Full name of the emergency contact.'),
-  emergency_contact_phone: string('Emergency contact 10-digit U.S. phone number, digits only.'),
+  phone_number: { type: 'string', description: '10 digits' },
+  email: { type: 'string' },
+  address_line_1: { type: 'string' },
+  address_line_2: { type: 'string' },
+  city: { type: 'string' },
+  state: { type: 'string', description: '2 letters' },
+  zip_code: { type: 'string' },
+  insurance_provider: { type: 'string' },
+  insurance_member_id: { type: 'string' },
+  preferred_language: { type: 'string' },
+  emergency_contact_name: { type: 'string' },
+  emergency_contact_phone: { type: 'string', description: '10 digits' },
 };
 
-const CALLER_CONFIRMED = {
-  type: 'boolean',
-  description: 'True only if the caller clearly said yes after hearing the details read back.',
-};
+const CALLER_CONFIRMED = { type: 'boolean', description: 'True only after a clear yes from the caller' };
 
-// Spoken if our server cannot be reached at all, which is the one failure the server
-// itself cannot report. Passed to the model as an instruction so the conversation can
-// continue rather than going silent.
-const WRITE_FAILED = {
+// For tools that take any subset of the fields above. Saves repeating the whole list.
+const ANY_PATIENT_FIELDS = { type: 'string', description: 'Field names as in save_patient' };
+
+// Spoken while a write is running, in the language of the call. Reads and checks stay
+// silent, since they normally return faster than a caller would notice.
+function fillers(english: string, spanish: string) {
+  const speak = (en: string, es: string) => [
+    { type: 'text', text: en, language: 'en' },
+    { type: 'text', text: es, language: 'es' },
+  ];
+  return [
+    { type: 'request-start', contents: speak(english, spanish) },
+    {
+      type: 'request-response-delayed',
+      timingMilliseconds: 5000,
+      contents: speak('Still working on it, thanks for your patience.', 'Sigo en ello, gracias por su paciencia.'),
+    },
+  ];
+}
+
+// Sent if our server cannot be reached at all, which is the one failure the server itself
+// cannot report. Passed to the model as an instruction, so it speaks instead of going quiet.
+const WRITE_UNREACHABLE = {
   type: 'request-failed',
   role: 'system',
-  content: 'That request failed and nothing was saved. Follow the WHEN SOMETHING GOES WRONG instructions as if the status was failed.',
+  content: 'That failed and nothing was saved. Treat it as status failed.',
 };
 
-const CARRY_ON_IF_FAILED = {
+const READ_UNREACHABLE = {
   type: 'request-failed',
   role: 'system',
-  content: 'That check failed. Do not mention it to the caller. Carry on with the next question.',
+  content: 'That failed. Do not mention it. Carry on.',
 };
 
+function tool(name: string, description: string, parameters: object, messages: object[]) {
+  return { type: 'function', function: { name, description, parameters }, messages };
+}
+
+// No list, search or delete tools exist, and no tool takes a patient ID, so no amount of
+// persuasion can make the model reach another record: the capability isn't there.
 const TOOLS = [
-  {
-    type: 'function',
-    function: {
-      name: 'lookup_patient_by_phone',
-      description: 'Find existing patients by phone number. Call this once, as soon as the caller gives their phone number.',
-      parameters: {
-        type: 'object',
-        properties: { phone_number: PATIENT_PROPERTIES.phone_number },
-        required: ['phone_number'],
+  tool(
+    'lookup_patient_by_phone',
+    'Find existing records by phone, as soon as the caller gives it.',
+    {
+      type: 'object',
+      properties: { phone_number: PATIENT_PROPERTIES.phone_number },
+      required: ['phone_number'],
+      additionalProperties: false,
+    },
+    [READ_UNREACHABLE],
+  ),
+  tool(
+    'check_fields',
+    'Validate answers without saving. Send only the fields to check.',
+    { type: 'object', additionalProperties: ANY_PATIENT_FIELDS },
+    [READ_UNREACHABLE],
+  ),
+  tool(
+    'save_patient',
+    'Save a new patient, only after the read-back and a clear yes.',
+    {
+      type: 'object',
+      properties: { ...PATIENT_PROPERTIES, caller_confirmed: CALLER_CONFIRMED },
+      required: [
+        'first_name', 'last_name', 'date_of_birth', 'sex', 'phone_number',
+        'address_line_1', 'city', 'state', 'zip_code', 'caller_confirmed',
+      ],
+      additionalProperties: false,
+    },
+    [...fillers('One moment while I save that.', 'Un momento mientras lo guardo.'), WRITE_UNREACHABLE],
+  ),
+  tool(
+    'verify_identity',
+    'Confirm the caller knows the date of birth on a matched record, before updating it.',
+    {
+      type: 'object',
+      properties: {
+        date_of_birth: PATIENT_PROPERTIES.date_of_birth,
+        match: { type: 'integer', description: 'Which match, if there were several' },
       },
+      required: ['date_of_birth'],
+      additionalProperties: false,
     },
-    messages: [CARRY_ON_IF_FAILED],
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'check_fields',
-      description: 'Check one or more answers right after the caller gives them, without saving anything. Send only the fields you want to check.',
-      parameters: { type: 'object', properties: PATIENT_PROPERTIES },
+    [READ_UNREACHABLE],
+  ),
+  tool(
+    'update_patient',
+    'Change fields on the record saved or verified on this call. Send only changed fields and caller_confirmed.',
+    {
+      type: 'object',
+      properties: { caller_confirmed: CALLER_CONFIRMED },
+      required: ['caller_confirmed'],
+      additionalProperties: ANY_PATIENT_FIELDS,
     },
-    messages: [CARRY_ON_IF_FAILED],
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'save_patient',
-      description: 'Save a new patient. Only call this after reading everything back and hearing a clear yes.',
-      parameters: {
-        type: 'object',
-        properties: { ...PATIENT_PROPERTIES, caller_confirmed: CALLER_CONFIRMED },
-        required: [
-          'first_name', 'last_name', 'date_of_birth', 'sex', 'phone_number',
-          'address_line_1', 'city', 'state', 'zip_code', 'caller_confirmed',
-        ],
+    [...fillers('One moment while I update that.', 'Un momento mientras lo actualizo.'), WRITE_UNREACHABLE],
+  ),
+  tool(
+    'get_appointment_slots',
+    'Get open appointment times, optionally near a preference.',
+    {
+      type: 'object',
+      properties: {
+        day: { type: 'string', enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] },
+        time_of_day: { type: 'string', enum: ['morning', 'afternoon'] },
       },
+      additionalProperties: false,
     },
-    messages: [
-      { type: 'request-start', content: 'One moment while I save that.' },
-      { type: 'request-response-delayed', timingMilliseconds: 5000, content: "Still working on it. Thanks for your patience." },
-      WRITE_FAILED,
-    ],
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'update_patient',
-      description: 'Change fields on an existing patient found by lookup_patient_by_phone. Send only the changed fields. Only call this after reading the changes back and hearing a clear yes.',
-      parameters: {
-        type: 'object',
-        properties: {
-          patient_id: string('The patient_id returned by lookup_patient_by_phone.'),
-          ...PATIENT_PROPERTIES,
-          caller_confirmed: CALLER_CONFIRMED,
-        },
-        required: ['patient_id', 'caller_confirmed'],
+    [READ_UNREACHABLE],
+  ),
+  tool(
+    'book_appointment',
+    'Book a slot for the patient on this call, after they agree.',
+    {
+      type: 'object',
+      properties: {
+        slot: { type: 'string', description: 'A slot value from get_appointment_slots' },
+        caller_confirmed: CALLER_CONFIRMED,
       },
+      required: ['slot', 'caller_confirmed'],
+      additionalProperties: false,
     },
-    messages: [
-      { type: 'request-start', content: 'One moment while I update that.' },
-      { type: 'request-response-delayed', timingMilliseconds: 5000, content: "Still working on it. Thanks for your patience." },
-      WRITE_FAILED,
-    ],
-  },
+    [...fillers('One moment while I book that.', 'Un momento mientras lo reservo.'), WRITE_UNREACHABLE],
+  ),
   // Vapi's built-in hang-up tool. The agent says goodbye itself, then calls it.
   { type: 'endCall' },
 ];
 
 export const ASSISTANT_NAME = 'CareCloud Patient Intake';
+export const MODEL = 'gpt-4.1-mini';
 
 export function buildAssistant(publicBaseUrl: string, webhookSecret: string) {
   return {
     name: ASSISTANT_NAME,
     firstMessage: FIRST_MESSAGE,
     firstMessageMode: 'assistant-speaks-first',
-    // A registration with every optional field can run long, so the default of
-    // 10 minutes is raised.
-    maxDurationSeconds: 1200,
+    // A registration with every optional field and a booking fits well inside this.
+    maxDurationSeconds: 900,
+    // Vapi's default for phone calls is office noise, which only makes speech harder to hear.
     backgroundSound: 'off',
     voicemailDetection: 'off',
 
+    // Chosen and justified in the README. Billed through Vapi, so no separate provider key.
+    // Vapi picks its own fallback models if this one fails, and its schema advises against
+    // setting them by hand.
     model: {
       provider: 'openai',
-      // Fast enough for live conversation and cheap enough that test calls do not
-      // run down the Vapi credit. Billed through Vapi, so no separate provider key.
-      model: 'gpt-4.1-mini',
+      model: MODEL,
       // Low, because tool arguments should be accurate more than they should be varied.
       temperature: 0.3,
       // The default of 250 tokens can cut off a long read-back.
-      maxTokens: 500,
+      maxTokens: 350,
+      // A fixed key groups every call's identical prefix for OpenAI's automatic prompt
+      // cache. It holds no call data. Whether it helps is measured: see cached_prompt_tokens.
+      promptCacheKey: 'carecloud-intake-v1',
       messages: [{ role: 'system', content: SYSTEM_PROMPT }],
       tools: TOOLS,
     },
 
-    voice: { provider: 'vapi', voiceId: 'Clara' },
-    transcriber: { provider: 'deepgram', model: 'nova-3', language: 'en' },
+    // Azure's multilingual voice, as Vapi's docs recommend for mixed languages. Azure rather
+    // than a Vapi voice, because Vapi's own voices have no fallback option in the schema.
+    voice: {
+      provider: 'azure',
+      voiceId: 'multilingual-auto',
+      fallbackPlan: { voices: [{ provider: 'vapi', voiceId: 'Elliot' }] },
+    },
 
-    // Callers pause in the middle of dictating phone numbers and ZIP codes. Waiting
-    // longer after a number stops the agent from jumping in halfway through.
+    // "multi" is the setup Vapi's docs recommend for language switching on one assistant.
+    transcriber: {
+      provider: 'deepgram',
+      model: 'nova-3',
+      language: 'multi',
+      fallbackPlan: { transcribers: [{ provider: 'deepgram', model: 'nova-2', language: 'multi' }] },
+    },
+
+    // Respond quickly in general, but wait longer after a number, so the agent doesn't
+    // jump in while someone is pausing halfway through a phone number or ZIP code.
     startSpeakingPlan: {
-      waitSeconds: 0.5,
+      waitSeconds: 0.4,
       transcriptionEndpointingPlan: {
-        onPunctuationSeconds: 0.2,
+        onPunctuationSeconds: 0.1,
         onNoPunctuationSeconds: 1.5,
-        onNumberSeconds: 1.5,
+        onNumberSeconds: 1.2,
       },
     },
 
-    // Never sit in silence. A gentle check first, because the caller may be finding an
-    // insurance card, then a polite hang-up.
     hooks: [
+      // Never sit in silence. A gentle check first, since the caller may be finding an
+      // insurance card, then a polite hang-up. "prompt" rather than fixed text, so it
+      // comes out in the language of the call.
       {
         on: 'customer.speech.timeout',
         options: { timeoutSeconds: 15, triggerMaxCount: 2, triggerResetMode: 'onUserSpeech' },
-        do: [{ type: 'say', exact: "Are you still there? Take your time, I'm happy to wait." }],
+        do: [{ type: 'say', prompt: 'In one short sentence, in the language of this call, check the caller is still there and say to take their time.' }],
       },
       {
         on: 'customer.speech.timeout',
         options: { timeoutSeconds: 45, triggerMaxCount: 1, triggerResetMode: 'onUserSpeech' },
         do: [
-          { type: 'say', exact: "It sounds like you may have stepped away, so I'll end the call here. Nothing has been saved. Please call back any time." },
+          { type: 'say', prompt: 'In one short sentence, in the language of this call, say you will hang up because they seem to have stepped away, and that anything not yet confirmed was not saved.' },
           { type: 'tool', tool: { type: 'endCall' } },
         ],
       },
@@ -174,17 +235,23 @@ export function buildAssistant(publicBaseUrl: string, webhookSecret: string) {
     // Only what the app uses. Everything else would just be webhook noise.
     serverMessages: ['tool-calls', 'end-of-call-report'],
 
-    // A custom header, not a Vapi credential, so the whole setup stays in this one
-    // file with no dashboard step. The inline server.secret field is gone from Vapi's
-    // current schema, and server.headers is the documented alternative.
+    // A custom header, not a Vapi credential, so the whole setup stays in this one file with
+    // no dashboard step. The inline server.secret field is gone from Vapi's current schema,
+    // and server.headers is the documented alternative.
     server: {
       url: `${publicBaseUrl.replace(/\/+$/, '')}/vapi/webhook`,
       timeoutSeconds: 15,
       headers: { 'x-vapi-secret': webhookSecret },
     },
 
-    // The transcript is what the task needs. Audio recordings add storage and
-    // sensitivity for no gain here.
+    // Audio recordings add storage and sensitivity for no gain here.
     artifactPlan: { recordingEnabled: false },
+
+    // Vapi runs a summary and a success evaluation through an LLM by default. The transcript
+    // is already stored, so those would be tokens spent re-reading it.
+    analysisPlan: {
+      summaryPlan: { enabled: false },
+      successEvaluationPlan: { enabled: false },
+    },
   };
 }

@@ -65,6 +65,14 @@ export async function findPatient(db: Db, id: string): Promise<Patient | null> {
   return rows[0] ?? null;
 }
 
+export async function dateOfBirthMatches(db: Db, id: string, isoDate: string): Promise<boolean> {
+  const { rowCount } = await db.query(
+    'SELECT 1 FROM patients WHERE patient_id = $1 AND date_of_birth = $2 AND deleted_at IS NULL',
+    [id, isoDate],
+  );
+  return rowCount === 1;
+}
+
 export async function insertPatient(db: Db, input: PatientInput): Promise<Patient> {
   // Column names are the keys of the validation rules, never raw user input.
   const columns = Object.keys(input);

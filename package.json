@@ -16,9 +16,11 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "vapi:sync": "tsx src/agent/sync-assistant.ts",
-    "db:local": "tsx scripts/local-postgres.ts"
+    "db:local": "tsx scripts/local-postgres.ts",
+    "scan:secrets": "tsx scripts/scan-secrets.ts"
   },
   "dependencies": {
+    "@fastify/rate-limit": "^11.2.1",
     "dotenv": "^18.0.9",
     "fastify": "^5.12.7",
     "pg": "^8.23.1"
