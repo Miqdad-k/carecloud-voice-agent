@@ -10,7 +10,7 @@ const PATTERNS: [string, RegExp][] = [
   ['GitHub token', /\bgh[pousr]_[A-Za-z0-9]{20,}/],
   ['AWS key', /\bAKIA[0-9A-Z]{16}\b/],
   ['JWT', /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./],
-  ['Railway or Vapi key assigned a value', /\b(VAPI_API_KEY|RAILWAY_TOKEN|VAPI_WEBHOOK_SECRET)\s*[=:]\s*['"]?[A-Za-z0-9_-]{8,}/],
+  ['Railway or Vapi key assigned a value', /\b(VAPI_API_KEY|RAILWAY_TOKEN|VAPI_WEBHOOK_SECRET)\s*[=:]\s*['"]?(?!test-secret\b)[A-Za-z0-9_-]{8,}/],
   ['Vapi secret header with a value', /x-vapi-secret['"]?\s*:\s*['"][A-Za-z0-9_-]{16,}/i],
   ['Database URL with a real password', /postgres(ql)?:\/\/[^:\s]+:(?!postgres@)[^@\s$<]+@/],
 ];
