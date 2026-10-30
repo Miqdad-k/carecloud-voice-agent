@@ -91,9 +91,9 @@ async function updatePatientTool(args: Args, ctx: ToolContext): Promise<ToolOutc
 
 async function getAppointmentSlots(args: Args): Promise<ToolOutcome> {
   const { slots, preferenceMet } = await findOpenSlots({ date: args.date, time_of_day: args.time_of_day });
-  // The reminder is here because on a scripted test call the model hung up right after this
-  // result. It arrives at the moment it matters, which a rule in the prompt does not.
-  return { status: 'ok', next: 'Say these times and ask which they want. Do not end the call.', slots, ...(!preferenceMet && { requested_time_unavailable: true }) };
+  // The reminder is here because on scripted test calls the model hung up right after this
+  // result, and on a vague "yes please". It arrives when it matters, which the prompt does not.
+  return { status: 'ok', next: 'Say these times and ask which they want. If their answer does not pick one, ask again. Do not end the call.', slots, ...(!preferenceMet && { requested_time_unavailable: true }) };
 }
 
 async function bookAppointment(args: Args, ctx: ToolContext): Promise<ToolOutcome> {
